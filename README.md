@@ -1,0 +1,322 @@
+# lean-autosubst
+
+[![Lean](https://img.shields.io/badge/Lean-v4.30.0-blue)](lean-toolchain)
+
+A self-contained Lean 4 port of [Autosubst 2](https://github.com/uds-psl/autosubst2): the de Bruijn
+substitution boilerplate generator. You write a HOAS specification of your syntax in a small DSL
+inside your `.lean` file, and an elaboration-time metaprogram synthesizes — as **real Lean
+declarations, typechecked by the kernel in-process** — the de Bruijn inductive types, the
+renaming/substitution operations, the full equational lemma tower, and the `asimp` simp set that
+discharges substitution goals.
+
+Unlike the Coq/OCaml Autosubst, there is **no external tool and no generated source text**: the
+`autosubst` command *is* the generator, and the kernel is the correctness oracle (a generated lemma
+that does not typecheck is a generator bug surfaced immediately). No Mathlib dependency.
+
+- **Two backends from one spec** — unscoped (`Nat`-indexed) and well-scoped (`Fin`-indexed).
+- **Multi-sorted, mutually-recursive syntax** with parallel substitutions (System F, CBV, …).
+- **Nested containers** (`List`, `Option`, `Prod`, *or your own inductive*) threaded automatically,
+  recognised on demand — no registration, no `deriving`.
+- **The complete tactic set** — `asimp` / `substify` / `renamify` / `auto_unfold`.
+- **Autosubst-consistent notations** — `s[σ]`, `s⟨ξ⟩`, `⇑σ`, `[t/]`, … (opt-in).
+- **Axiom-clean** — the entire generated tower uses only `propext` and `Quot.sound`.
+
+```lean
+import LeanAutosubst
+open Autosubst Autosubst.Notation
+
+autosubst
+  ty where
+    | Base : ty
+    | Fun  : ty → ty → ty
+  tm where
+    | app : tm → tm → tm
+    | lam : ty → (bind tm in tm) → tm
+
+-- Everything below `autosubst` is generated. The substitution lemma, proved automatically:
+example (σ : Nat → tm) (t s : tm) :
+    (s[t/])[σ] = (s[⇑σ])[t[σ]/] := by asimp
+```
+
+## Installation
+
+Add the dependency to your `lakefile.toml`:
+
+```toml
+[[require]]
+name = "lean-autosubst"
+git  = "https://github.com/qcfu-bu/lean-autosubst.git"
+rev  = "main"
+```
+
+or, with a Lean `lakefile.lean`:
+
+```lean
+require «lean-autosubst» from git
+  "https://github.com/qcfu-bu/lean-autosubst.git" @ "main"
+```
+
+then `import LeanAutosubst`. Your project's `lean-toolchain` must match the one pinned here
+([`leanprover/lean4:v4.30.0`](lean-toolchain)).
+
+## The DSL
+
+### The command: `autosubst` and `autosubst wellscoped`
+
+```lean
+autosubst              -- unscoped: variables are `Nat`, `var_tm : Nat → tm`
+autosubst wellscoped   -- well-scoped: variables are `Fin n`, `var_tm : Fin n → tm n`
+  <sort> where
+    | <ctor> : <arg> → … → <sort>
+    | …
+  <sort> where …       -- one block per syntactic sort; mutually-recursive sorts are detected
+```
+
+The block *reads* like (mutual) Lean `inductive`s, but it is **never elaborated as one** — it is
+captured as syntax, lowered to a first-order de Bruijn inductive (binders erased), and only that
+strictly-positive inductive reaches the kernel. So `bind`-annotated "function arrows" never become
+real function types and positivity is a non-issue.
+
+* **Unscoped** (default) — `tm : Type`, `var_tm : Nat → tm`, `lam : ty → tm → tm`.
+* **Well-scoped** (`wellscoped`) — each substitution sort is indexed by one `Nat` per kind of
+  variable it carries: `tm : Nat → Type`, `var_tm : Fin n → tm n`, `lam : ty → tm (n+1) → tm n`.
+  Scope indices are auto-bound implicits.
+
+### Binders: `bind a in h` and `bind a, b in h`
+
+A constructor argument that binds variables wraps its head type in a `bind … in …` annotation:
+
+```lean
+| lam   : ty → (bind tm in tm) → tm          -- `lam`'s body binds one `tm` variable
+| tlam  : (bind ty in tm) → tm               -- a *cross-sort* binder: binds a `ty` in a `tm`
+| split : tm → (bind tm, tm in tm) → tm      -- simultaneous binding of TWO variables (Σ-/pair elim)
+```
+
+`bind a, b in h` binds several variables **at once** in the same position — substitution lifts once
+per binder (`up ∘ up …`); in well-scoped mode the body's scope jumps accordingly (`tm (n+1+1)`). See
+[LeanAutosubst/Examples/PairBindDsl.lean](LeanAutosubst/Examples/PairBindDsl.lean).
+
+### Container heads `(F a)` and external types
+
+A substitutable sort may be nested inside a container — `List`, `Option`, `Prod`, **or any inductive
+of your own** — and substitution threads through it automatically. Container application uses
+parentheses:
+
+```lean
+| seq : (List tm) → tm                    -- substitution maps over the list
+| opt : (Option tm) → tm
+| pr  : (Prod tm tm) → tm                 -- i.e. `tm × tm`
+| brs : (List (Prod tm tm)) → tm          -- nestings compose
+| lam : (bind tm in (List tm)) → tm       -- a binder *into* a container
+```
+
+`List`/`Option`/`Prod` are **not privileged** — they are recognised by an **on-demand** check, the
+same one your own types go through. When `autosubst` meets a head `(F …)`, it reads `F`'s
+declaration: if `F` is a *regular polynomial functor* (each constructor argument is the type
+parameter, a recursive occurrence, or a parameter-free type), substitution threads through it. So you
+just *use* your container — **no registration, no `deriving`, nothing to write**:
+
+```lean
+inductive Tree (α : Type) | leaf : α → Tree α | node : Tree α → Tree α → Tree α
+
+autosubst
+  tm where
+    | branch : (Tree tm) → tm          -- threads through `Tree` automatically — `Tree` needs no markup
+    | …
+```
+
+A head that wraps a sort but *isn't* such a functor (a function space like `cod = fun α => Fin p →
+α`, a non-regular type) is **rejected with a clear error**, never silently mis-threaded. See
+[the capability matrix](#capability-matrix).
+
+**Any identifier that is not a declared sort** is treated as an external (foreign) leaf type —
+carried unchanged by `ren`/`subst` — regardless of case. This is how you reference ordinary Lean
+types (`Nat`, `Bool`) and your own types (`mytype`, lowercase included):
+
+```lean
+| const : Nat → tm        -- `Nat` is foreign; `const c` is substitution-invariant
+| lit   : mytoken → tm    -- a lowercase user type works just as well
+```
+
+The generated inductive's convenience `Repr`/`DecidableEq` instances are derived **best-effort**: a
+foreign field type that lacks them (say, one with a function field) does not block generation — you
+simply don't get those two instances for that sort, and can add them yourself afterwards
+(`deriving instance Repr for tm`). Sorts with only ordinary fields keep them as before.
+
+A sort with **no constructors** is a pure *variable/name* sort (only `var_<sort>`), e.g. channel
+names in the π-calculus.
+
+## Generated names (the contract)
+
+For each substitution sort `s` (one carrying variables) with substitution vector `[v₁ … vₖ]` (the
+kinds of variable `s` contains), `autosubst` emits, with these exact names:
+
+| name                                                                           | meaning                                                   |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `s`, `var_s`                                                                   | the de Bruijn inductive and its variable constructor      |
+| `congr_<ctor>`                                                                 | congruence lemma, one per non-leaf constructor            |
+| `ren_s`, `subst_s`                                                             | parallel renaming/substitution (one map per `vᵢ`)         |
+| `upRen_b_v`, `up_b_v`                                                          | lift a renaming/substitution through a binder of sort `b` |
+| `idSubst_s`, `extRen_s`, `ext_s`                                               | `subst id = id` and extensionality                        |
+| `compRenRen_s`, `compRenSubst_s`, `compSubstRen_s`, `compSubstSubst_s`         | the four fusion laws                                      |
+| `rinst_inst_s`                                                                 | renaming is a special case of substitution                |
+| `renRen_s`, `renSubst_s`, `substRen_s`, `substSubst_s` (+ `'` map-level forms) | clean fusion wrappers                                     |
+| `instId_s`, `rinstId_s`, `varL_s`, `varLRen_s`                                 | `subst var = id`, `ren id = id`, var laws                 |
+
+These match the upstream Autosubst names; the non-primed `instId`/`compComp…`/`rinstInst` forms are
+exactly what `asimp` rewrites with. Hand-written golden references live in
+[LeanAutosubst/Examples/](LeanAutosubst/Examples/) (`Stlc`, `SysF`, `StlcScoped`, `SysFScoped`,
+`Container`).
+
+## Tactics
+
+* **`asimp`** — normalize substitution/renaming expressions to a canonical form (the σ-calculus
+  normal form). Closes the standard goals: substitution identity, `ren id = id`, the four fusions,
+  β-cancellation (`(ren shift s)[t..] = s`), and the substitution lemma. Variants `asimp at h` and
+  `asimp at *` come for free. Implemented as `simp only [asimp_lemmas]` over the generated clean
+  lemmas plus the static σ-laws ([LeanAutosubst/Tactic/Asimp.lean](LeanAutosubst/Tactic/Asimp.lean)).
+* **`substify`** — rewrite renamings into substitutions (`ren_s ξ ↦ subst_s (var ∘ ξ)`) and then
+  `asimp`. Variants `substify at h` / `at *`.
+* **`renamify`** — the inverse of `substify`: rewrite `subst_s (var ∘ ξ) ↦ ren_s ξ` (the same
+  `rinstInst'_s` identity, oriented right-to-left) and then `asimp`. Variants `renamify at h` / `at *`.
+* **`auto_unfold`** — unfold the lifting helpers (`up_*` / `upRen_*` / `up_ren`), exposing the
+  underlying `scons`/`funcomp`/`ren shift` machinery (no σ-calculus rewriting). Variants `at h` / `at *`.
+
+```lean
+example (s : tm) : ren_tm id s = s := by asimp
+example (σ τ : Nat → tm) (s : tm) :
+    subst_tm τ (subst_tm σ s) = subst_tm (funcomp (subst_tm τ) σ) s := by asimp
+example (ξ : Nat → Nat) (s : tm) : subst_tm (funcomp tm.var_tm ξ) s = ren_tm ξ s := by renamify
+```
+
+`@[asimp_lemmas]` / `@[substify_lemmas]` / `@[renamify_lemmas]` / `@[auto_unfold_lemmas]` are the
+underlying simp sets, should you want to add your own lemmas.
+
+## Notations
+
+A purely additive, opt-in readability layer mirroring upstream Autosubst's notation set
+([LeanAutosubst/Prelude/Notation.lean](LeanAutosubst/Prelude/Notation.lean)). Open
+`Autosubst.Notation` (unscoped) or `Autosubst.Scoped.Notation` (well-scoped) to bring them into
+scope:
+
+| notation     | meaning                          | desugars to                       |
+| ------------ | -------------------------------- | --------------------------------- |
+| `s[σ]`       | substitution application         | `subst_s σ s`                     |
+| `s[σ;τ]`     | parallel (two-map) substitution  | `subst_s σ τ s`                   |
+| `s⟨ξ⟩`       | renaming application             | `ren_s ξ s`                       |
+| `s⟨ξ;ζ⟩`     | parallel (two-map) renaming      | `ren_s ξ ζ s`                     |
+| `[σ]`, `⟨ξ⟩` | the same as functions            | `subst_s σ`, `ren_s ξ`            |
+| `[a, b, c/]` | explicit finite substitution     | `a .: b .: c .: var_s`            |
+| `s[a, b, c/]`| applied to `s`                   | `subst_s (a .: b .: c .: var_s) s`|
+| `t..`        | single-point β-substitution      | `t .: var_s` (= `[t/]`)           |
+| `↑`          | the shift renaming               | `shift`                           |
+| `⇑σ`         | lift under one binder (see below)| `up_b_v σ`                        |
+| `f >> g`     | forward composition (always on)  | `funcomp g f`                     |
+| `s .: σ`     | cons onto a map (always on)      | `scons s σ`                       |
+
+The `[a, b, c/]` form (the `/` marks it a *substitution*, distinct from a list literal `[a, b, c]`)
+is the explicit finite substitution — a prefix of terms with an identity tail — and `s[t/]` its
+single-variable application (β). It replaces the ad-hoc `inst`/`scons t var` aliases that example
+files used to define by hand.
+
+`⇑σ` is the lift of `σ` under one binder (`up_b_v σ`). It is emitted **only for single-open-sort
+signatures** (STLC, the container example, the variadic test), where the binder sort `b` and
+component sort `v` are both forced. In a genuinely multi-sort signature the same map type is lifted
+by several binder sorts — in System F `up_tm_tm` and `up_ty_tm` are both `(Nat → tm) → (Nat → tm)` —
+so no single dispatched `⇑` exists and the explicit `up_b_v` names are used (this is also why
+upstream Autosubst gives `up` only a *printing* abbreviation).
+
+The application/function forms are **typeclass-dispatched** (`Subst1`/`Subst2`, `Ren1`/`Ren2`,
+`Var`), so one notation works across all sorts; `autosubst` emits one instance per sort. Dispatch
+keys on the **subject sort + map type**, and `asimp` is taught (via generated `rfl` bridge lemmas)
+to normalize the notations away before rewriting, so `by asimp` closes notation'd goals unchanged.
+
+```lean
+open Autosubst Autosubst.Notation
+example (t s : tm)           : (s⟨↑⟩)[t/] = s              := by asimp   -- β cancels a shift
+example (σ : Nat → tm) (s : tm) : s[σ][σ] = s[σ >> [σ]]    := by asimp   -- fusion, notated
+```
+
+The notations live in **scoped namespaces** (Autosubst's `subst_scope`/`fscope`), so `↑`, `s[i]`,
+`[x]`, `⟨x⟩` overload Lean's coercion / `GetElem` / list / anonymous-constructor syntax and
+disambiguate by elaboration rather than clashing. In the **well-scoped** backend a *polymorphic*
+constant map (`↑`, `var_s` — its scope is a metavar at the use site) needs a one-off type
+ascription, e.g. `(↑ : Fin n → Fin (n+1))`; concrete map variables never do, and the unscoped
+backend never needs one. See [LeanAutosubst/Examples/StlcDsl.lean](LeanAutosubst/Examples/StlcDsl.lean)
+(unscoped), [SysfDsl.lean](LeanAutosubst/Examples/SysfDsl.lean) (two-map), and
+[StlcScopedDsl.lean](LeanAutosubst/Examples/StlcScopedDsl.lean) (scoped).
+
+## Capability matrix
+
+Verified by the test suite ([tests/](tests/), built with `lake build Tests`), which ports each
+reference signature from the upstream
+[Autosubst 2 OCaml port](https://github.com/uds-psl/autosubst-ocaml) and asserts the tower
+typechecks, is axiom-clean (`{propext, Quot.sound}` only — no `sorryAx`/`Classical.choice`), and
+that representative `by asimp` goals close.
+
+| signature                        | feature exercised                                            |  unscoped   |  well-scoped   |
+| -------------------------------- | ------------------------------------------------------------ | :---------: | :------------: |
+| `stlc` / `stlc-unicode`          | single sort; unicode names                                   |      ✅      |       ✅        |
+| `sysf`                           | multi-sort, hierarchical; two parallel maps                  |      ✅      |       ✅        |
+| `fcbv`                           | genuinely **mutual** sorts (`tm ↔ vl`), cross-sort binders   |      ✅      |       ✅        |
+| `pi`                             | pure **name** sort + **nullary** constructor                 |      ✅      |       ✅        |
+| `num` / `prelude`                | external/foreign leaf types (`Nat`, `Bool`)                  |      ✅      |       ✅        |
+| `logrel_coq`                     | `Option` functor + binder-into-`Option`                      |      ✅      |   ⛔ kernel†    |
+| `variadic` (container part)      | `List` functor                                               |      ✅      |   ⛔ kernel†    |
+| `variadic` (binder `bind ⟨p,t⟩`) | variadic binding (runtime `p`)                               | ⛔ unported‡ | ✅ single-sort‡ |
+| (user)                           | own container, recognised on demand (a `Tree`)              |     ✅¶      |   ⛔ kernel†    |
+
+**†** Nesting a container over a *scope-indexed* inductive is rejected by the Lean 4 **kernel**
+(`invalid nested inductive datatype … parameters cannot contain local variables`). This is a
+Lean-vs-Coq kernel difference — Coq's `-s coq` accepts the analogue — not an Autosubst/maths
+limitation. Unscoped containers work fully.
+
+**‡** The variadic binder `bind ⟨p, t⟩` (a runtime count `p` of fresh variables; `lam (p : nat) :
+(bind ⟨p, tm⟩ in tm) → tm` ⟶ `lam : (p : Nat) → tm (n + p) → tm n`) is supported in the
+**well-scoped** backend for **single-substitution-sort** signatures
+([tests/Tests/Variadic.lean](tests/Tests/Variadic.lean)), via `scons_p`/`shift_p`/`zero_p`/`upRen_p`
+([LeanAutosubst/Prelude/Scoped.lean](LeanAutosubst/Prelude/Scoped.lean), index order `Fin (n + p)`).
+The **unscoped** variadic form and the **multi-open-sort** scoped form are unported (explicit error).
+The fixed-arity `bind a, b` multi-binder *is* supported in both backends.
+
+**¶** A user's **own inductive** becomes a container with **nothing to write** — no registration, no
+attribute, no `deriving`. When `autosubst` meets a head `(F …)` it reads `F`'s declaration *on
+demand*: if `F` is a 1-parameter *regular polynomial functor* (every constructor argument is the
+parameter `α`, a recursive `F α`, or a parameter-free type), it derives a structural helper + a
+`congrC_F_<ctor>` congruence directly from the constructors and threads substitution through
+([tests/Tests/UserContainer.lean](tests/Tests/UserContainer.lean)). `List`/`Option` go through this
+*same* check — not special-cased; `Prod` is the lone inline case (binary, threaded by projections). A
+sort-wrapping head that *fails* the check is rejected with an **explicit error** — a **function-space**
+"functor" like `fol`'s `cod = fun α => Fin p → α` has no constructors to recurse on (asserted in
+`Tests/Unsupported.lean`), never a silent miscompile.
+
+Each ⛔ above is asserted (with `#guard_msgs`) in
+[tests/Tests/Unsupported.lean](tests/Tests/Unsupported.lean), so a regression to a silent success
+breaks the build. A real-world integration proof — STLC progress + preservation built on the
+generated operations — is in [tests/Tests/CaseStudy.lean](tests/Tests/CaseStudy.lean).
+
+### Not modelled
+
+Custom variable-constructor renaming (`tm(tRel)` in `utlc.sig`) — `var_<sort>` is fixed by the name
+contract. Constructor/sort names must be valid Lean identifiers, so reserved tokens (`λ`) and
+non-letter unicode are unavailable (a Lean lexical constraint). Autosubst's *modular* syntax feature
+is out of scope (as in the OCaml port).
+
+## Building
+
+```sh
+lake build          # the library: the `autosubst` command + tactics + notations
+lake build Tests    # the reference-signature test suite
+```
+
+## References
+
+- Kathrin Stark, Steven Schäfer, Jonas Kaiser. *Autosubst 2: Reasoning with Multi-Sorted de Bruijn
+  Terms and Vector Substitutions* (CPP 2019).
+- [Autosubst 2](https://github.com/uds-psl/autosubst2) — the original Haskell generator (emits Coq).
+- [autosubst-ocaml](https://github.com/uds-psl/autosubst-ocaml) — the OCaml reimplementation this
+  port follows; its `signatures/` are the test oracle here.
+
+## License
+
+Released under the [MIT License](LICENSE).

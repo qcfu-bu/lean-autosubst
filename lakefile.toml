@@ -1,0 +1,12 @@
+name = "lean-autosubst"
+version = "0.1.0"
+defaultTargets = ["LeanAutosubst"]
+
+[[lean_lib]]
+name = "LeanAutosubst"
+
+# The reference-signature test suite (see tests/Tests.lean). Build with `lake build Tests`.
+[[lean_lib]]
+name = "Tests"
+srcDir = "tests"
+globs = ["Tests", "Tests.+"]
