@@ -311,18 +311,18 @@ that representative `by asimp` goals close.
 | `fcbv`                           | genuinely **mutual** sorts (`tm ↔ vl`), cross-sort binders   |      ✅      |       ✅        |
 | `pi`                             | pure **name** sort + **nullary** constructor                 |      ✅      |       ✅        |
 | `num` / `prelude`                | external/foreign leaf types (`Nat`, `Bool`)                  |      ✅      |       ✅        |
-| `logrel_coq`                     | `Option` functor + binder-into-`Option`                      |      ✅      |   ⛔ kernel†    |
-| `variadic` (container part)      | `List` functor                                               |      ✅      |   ⛔ kernel†    |
-| `variadic` (binder `bind ⟨p,t⟩`) | variadic binding (runtime `p`)                               | ⛔ unported‡ | ✅ single-sort‡ |
-| (user)                           | own container, recognised on demand (a `Tree`)              |     ✅¶      |   ⛔ kernel†    |
-| `parameterized`                  | sort params, explicit sort refs, `opaque`, polynomial containers | ✅ raw ops§ | ✅ raw ops§ / ⛔ containers† |
+| `logrel_coq`                     | `Option` functor + binder-into-`Option`                      |      ✅      |   ⛔ kernel¹    |
+| `variadic` (container part)      | `List` functor                                               |      ✅      |   ⛔ kernel¹    |
+| `variadic` (binder `bind ⟨p,t⟩`) | variadic binding (runtime `p`)                               | ⛔ unported² | ✅ single-sort² |
+| (user)                           | own container, recognised on demand (a `Tree`)              |     ✅³      |   ⛔ kernel¹    |
+| `parameterized`                  | sort params, explicit sort refs, `opaque`, polynomial containers |      ✅⁴     |   ⛔ kernel¹    |
 
-**†** Nesting a container over a *scope-indexed* inductive is rejected by the Lean 4 **kernel**
+**¹** Nesting a container over a *scope-indexed* inductive is rejected by the Lean 4 **kernel**
 (`invalid nested inductive datatype … parameters cannot contain local variables`). This is a
 Lean-vs-Coq kernel difference — Coq's `-s coq` accepts the analogue — not an Autosubst/maths
 limitation. Unscoped containers work fully.
 
-**‡** The variadic binder `bind ⟨p, t⟩` (a runtime count `p` of fresh variables; `lam (p : nat) :
+**²** The variadic binder `bind ⟨p, t⟩` (a runtime count `p` of fresh variables; `lam (p : nat) :
 (bind ⟨p, tm⟩ in tm) → tm` ⟶ `lam : (p : Nat) → tm (n + p) → tm n`) is supported in the
 **well-scoped** backend for **single-substitution-sort** signatures
 ([tests/Tests/Variadic.lean](tests/Tests/Variadic.lean)), via `scons_p`/`shift_p`/`zero_p`/`upRen_p`
@@ -330,7 +330,7 @@ limitation. Unscoped containers work fully.
 The **unscoped** variadic form and the **multi-open-sort** scoped form are unported (explicit error).
 The fixed-arity `bind a, b` multi-binder *is* supported in both backends.
 
-**¶** A user's **own inductive** becomes a container with **nothing to write** — no registration, no
+**³** A user's **own inductive** becomes a container with **nothing to write** — no registration, no
 attribute, no `deriving`. When `autosubst` meets a head `F …` it reads `F`'s declaration *on
 demand*: if `F` is a *regular polynomial functor* in its type parameters (constructor arguments use
 parameters only as elements, uniform recursive `F ...` occurrences, or not at all), it derives a
@@ -341,14 +341,13 @@ sort-wrapping head that *fails* the check is rejected with an **explicit error**
 "functor" like `fol`'s `cod = fun α => Fin p → α` has no constructors to recurse on (asserted in
 `Tests/Unsupported.lean`), never a silent miscompile.
 
-**§** Parameterized sort declarations support multiple explicit/implicit Lean parameters and
+**⁴** Parameterized sort declarations support multiple explicit/implicit Lean parameters and
 explicit sort references such as `Ty Srt Ann`. Multi-parameter user containers are recognised when
 they are regular polynomial functors in their type parameters; each applied argument is threaded
 according to the syntax it contains, including non-final arguments. As with other containers, nesting
 them over a well-scoped indexed family hits the Lean kernel limitation above. The generated raw
-operations/lemmas, including a scoped non-container parameterized signature, are covered by
-[tests/Tests/Parameterized.lean](tests/Tests/Parameterized.lean); the opt-in notation instances are
-still emitted only for unparameterized sorts.
+operations and lemmas are covered by
+[tests/Tests/Parameterized.lean](tests/Tests/Parameterized.lean).
 
 Each ⛔ above is asserted (with `#guard_msgs`) in
 [tests/Tests/Unsupported.lean](tests/Tests/Unsupported.lean), so a regression to a silent success
