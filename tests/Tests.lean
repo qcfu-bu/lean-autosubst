@@ -19,5 +19,6 @@ import Tests.Renamify      -- renamify + auto_unfold tactics (Phase 6 remnants; 
 import Tests.Variadic      -- variadic.sig: scoped variadic binder `bind ⟨p, t⟩` (well-scoped only)
 import Tests.UserContainer  -- user containers recognised on demand (a `Tree`); no deriving
 import Tests.Notation      -- Autosubst-consistent notations (s[σ]/s⟨ξ⟩/↑/t..); both backends
+import Tests.Parameterized -- parameterized AST sorts, explicit sort refs, parameterized containers
 import Tests.Unsupported   -- explicit xfails: unscoped/multi-sort variadic, custom functor, scoped containers
 import Tests.CaseStudy     -- integration: STLC progress + preservation

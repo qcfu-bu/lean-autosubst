@@ -45,6 +45,7 @@ ident or a parenthesized head. Nesting a functor application therefore *requires
 (`List (Option tm)`), exactly as `List (Option α)` does in Lean. -/
 syntax (name := headArgAtom) ident : asHeadArg
 syntax (name := headArgParen) "(" asHead ")" : asHeadArg
+syntax (name := headArgOpaque) "opaque(" term ")" : asHeadArg
 
 /-- A head type: a sort/ext ident, a functor application `F a b …` (juxtaposition, like Lean — the
 top-level application needs no parens), or a redundantly-parenthesized head `(…)`. Application binds
@@ -56,6 +57,7 @@ syntax (name := headAtom) ident : asHead
 -- the next `| ctor`) as `ty tm`. This is what the old mandatory `( … )` delimiter bought us.
 syntax (name := headApp) withPosition(ident (colGt asHeadArg)+) : asHead
 syntax (name := headParen) "(" asHead ")" : asHead
+syntax (name := headOpaque) "opaque(" term ")" : asHead
 
 /-- A constructor argument: a head, or a `bind … in head` binder annotation. The binder annotation
 may be written parenthesized (`(bind tm in tm)`) or bare (`bind tm in tm`). A parenthesized *head*
@@ -77,9 +79,14 @@ declare_syntax_cat asCtor
 -- irrelevant to it.
 syntax (name := ctorDecl) "| " ident asCtorParam* " : " asArg ((" → " <|> " -> ") asArg)* : asCtor
 
-/-- A sort declaration: `name where | … | …`. -/
+/-- A sort declaration: `name {α : Type u} (β : Type v) where | … | …`.
+The parameter binders are preserved in the generated inductive and threaded implicitly through
+generated renaming/substitution declarations. -/
 declare_syntax_cat asSortDecl
-syntax (name := sortDecl) ident " where " asCtor* : asSortDecl
+declare_syntax_cat asSortParam
+syntax (name := sortParamExplicit) "(" ident " : " term ")" : asSortParam
+syntax (name := sortParamImplicit) "{" ident " : " term "}" : asSortParam
+syntax (name := sortDecl) ident asSortParam* " where " asCtor* : asSortDecl
 
 /-- The top-level command capturing the whole HOAS block. The optional `wellscoped` modifier
 selects the `Fin`-indexed (well-scoped) backend instead of the default unscoped `Nat` one

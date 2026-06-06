@@ -28,12 +28,23 @@ partial def parseHead (declared : List Name) (s : Syntax) : ArgHead :=
   let k := s.getKind
   if k == ``headApp then
     -- `ident asHeadArg+`: child 0 is the functor name, child 1 the argument group.
-    .functor s[0].getId (s[1].getArgs.toList.map (parseHead declared))
+    let id := s[0].getId
+    let args := s[1].getArgs.toList.map (parseHead declared)
+    if declared.contains id then .sort id args else .functor id args
   else if k == ``headParen || k == ``headArgParen then
     parseHead declared s[1]   -- `( asHead )` — unwrap
+  else if k == ``headOpaque || k == ``headArgOpaque then
+    .opaque s[1]
   else -- headAtom / headArgAtom: a lone ident
     let id := s[0].getId
-    if declared.contains id then .sort id else .ext id
+    if declared.contains id then .sort id [] else .ext id
+
+/-- A sort parameter declaration ⟶ `Param`. -/
+def parseParam (s : Syntax) : Param :=
+  if s.getKind == ``sortParamImplicit then
+    { name := s[1].getId, type := s[3], implicit := true }
+  else
+    { name := s[1].getId, type := s[3], implicit := false }
 
 /-- A binder annotation element ⟶ `Binder`. -/
 def parseBinder (s : Syntax) : Binder :=
@@ -68,7 +79,9 @@ def parseCtor (declared : List Name) (s : Syntax) : IR.Constructor :=
 
 /-- A sort declaration ⟶ `SortDecl`. -/
 def parseSortDecl (declared : List Name) (s : Syntax) : SortDecl :=
-  { name := s[0].getId, ctors := s[2].getArgs.toList.map (parseCtor declared) }
+  { name := s[0].getId
+  , params := s[1].getArgs.toList.map parseParam
+  , ctors := s[3].getArgs.toList.map (parseCtor declared) }
 
 /-- The whole `autosubst` block ⟶ `Spec` (sorts in declaration order). The sort declarations are
 at child `2` (child `1` is the optional `wellscoped` modifier). -/
@@ -102,8 +115,8 @@ def elabAutosubst : CommandElab := fun stx => do
   let isScoped := !stx[1].isNone
   let spec := parseSpec stx
   -- Recognise container heads **on demand**: which `(F …)` heads in this signature are functors we
-  -- can thread substitution through (`Prod`, or a unary regular polynomial functor like `List`/a
-  -- user `Tree`). No registry, no required `deriving` — just the inductive declarations themselves.
+  -- can thread substitution through (`Prod`, or a regular polynomial functor in its type parameters
+  -- like `List`/a user `Tree`/a bifunctor). No registry, no required `deriving` — just the inductive declarations themselves.
   -- We compute each head's `ContainerShape` **once** here (`shapes`, keyed by head name) and thread
   -- it to the generator, so no datatype is re-analyzed per use site. `analyze` only needs the *names*
   -- of the recognised heads (`shapes` + `Prod` if used) for its `badFunctor` check.

@@ -22,6 +22,7 @@ namespace Autosubst.IR
 /-- A sort enriched with the results of analysis. -/
 structure SortInfo where
   name : SortId
+  params : List Param := []
   ctors : List Constructor
   /-- Has variables (a `var_` constructor): bound somewhere, non-vacuously. -/
   isOpen : Bool
@@ -42,8 +43,8 @@ structure Signature where
 namespace Signature
 
 /-- The default container/functor heads when none are inferred — the standard Lean containers. The
-real recognised set is computed **on demand** by `Frontend.Elab` (any unary regular polynomial
-functor — `containerShape?`) and passed into `analyze` as `containers`. -/
+real recognised set is computed **on demand** by `Frontend.Elab` (any inductive regular in its type
+parameters — `containerShape?`) and passed into `analyze` as `containers`. -/
 def supportedFunctors : List Name := [`List, `Option, `Prod]
 
 /-- The name of an unsupported functor head that wraps a declared sort (so substitution *would*
@@ -51,7 +52,8 @@ need to thread through it), if any. `List (cod term)` reports `cod`; `List Nat`,
 (no declared sort inside) are fine as opaque leaves. `containers` is the recognised set (standard +
 registered). -/
 partial def badFunctor (containers : List Name) (declared : List SortId) : ArgHead → Option Name
-  | .sort _ | .ext _ => none
+  | .sort _ args => args.findSome? (badFunctor containers declared)
+  | .ext _ | .opaque _ => none
   | .functor f args =>
     if !containers.contains f && (args.flatMap ArgHead.argSorts).any declared.contains then
       some f
@@ -83,6 +85,16 @@ def analyze (sp : Spec) (sc : Bool := false) (containers : List Name := supporte
     Except String Signature := do
   let succ := directArgs sp
   let canonical := sp.sortNames
+  let paramSig (ps : List Param) : List (Name × Syntax × Bool) :=
+    ps.map fun p => (p.name, p.type, p.implicit)
+  match sp.sorts with
+  | [] => pure ()
+  | sd0 :: rest =>
+      let base := paramSig sd0.params
+      for sd in rest do
+        unless paramSig sd.params == base do
+          throw s!"Parameterized mutual signatures currently require compatible parameter telescopes; \
+            sort '{sd.name}' does not match sort '{sd0.name}'."
   -- (1b) reject variadic binders `bind ⟨p, t⟩` in **unscoped** mode — unported there (would lower
   -- to a *single* lift, silently wrong). In scoped mode they are threaded via `scons_p`/`shift_p`
   -- (plan.md §9/§10). Fixed-arity multi-binders `bind a, b` are fine in both.
@@ -96,8 +108,8 @@ def analyze (sp : Spec) (sc : Bool := false) (containers : List Name := supporte
                 is not supported in unscoped mode (use `autosubst wellscoped`; the unscoped variadic \
                 form is unported, as upstream)."
   -- (1c) reject heads we can't thread substitution through. `containers` is the set of heads
-  -- recognised **on demand** as container functors (`Prod`, or a unary regular polynomial functor —
-  -- `List`/`Option`/a user `Tree`); a head wrapping a declared sort that is *not* one of these
+  -- recognised **on demand** as container functors (`Prod`, or a regular polynomial functor in its
+  -- type parameters — `List`/`Option`/a user `Tree`); a head wrapping a declared sort that is *not* one of these
   -- (a function-space "functor" like `fol`'s `cod`, a non-regular/nested or dependent type) cannot be
   -- threaded and is rejected here rather than lowered to undefined code.
   for sd in sp.sorts do
@@ -105,10 +117,10 @@ def analyze (sp : Spec) (sc : Bool := false) (containers : List Name := supporte
       for pos in c.positions do
         if let some f := badFunctor containers canonical pos.head then
           throw s!"Cannot thread substitution through container head '{f}' in constructor \
-            '{c.name}' of sort '{sd.name}': '{f}' must be `Prod` or a single-parameter inductive whose \
-            constructor arguments are only the parameter, a recursive occurrence, or parameter-free \
-            types (a List/Option/Tree-like regular functor). Function-space or non-regular types \
-            (like `cod`) are unsupported."
+            '{c.name}' of sort '{sd.name}': '{f}' must be `Prod` or an inductive regular in its \
+            type parameters, whose constructor arguments use parameters only as elements, \
+            uniform recursive occurrences, or not at all (a List/Option/Tree/PairBox-like regular functor). \
+            Function-space or non-regular types (like `cod`) are unsupported."
   -- (2) binder analysis: collect open sorts; reject vacuous bindings.
   let mut openSet : List SortId := []
   for sd in sp.sorts do
@@ -135,7 +147,7 @@ def analyze (sp : Spec) (sc : Bool := false) (containers : List Name := supporte
   -- (3) substitution vectors.
   let sortInfos := sp.sorts.map fun sd =>
     let refl := reachRefl succ sd.name
-    { name := sd.name, ctors := sd.ctors, isOpen := isOpen sd.name
+    { name := sd.name, params := sd.params, ctors := sd.ctors, isOpen := isOpen sd.name
     , substVec := canonical.filter (fun s => isOpen s && refl.contains s)
     , args := succ sd.name }
   -- (4) components: group canonical sorts into SCCs, ordered by first appearance.

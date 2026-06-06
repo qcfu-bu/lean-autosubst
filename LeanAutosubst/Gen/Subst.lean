@@ -44,24 +44,24 @@ def upBinderName (forRen : Bool) (b : IR.Binder) (v : SortId) : Name :=
 /-! ## Containers (Phase 9 + §4a route (b), nested substitution).
 
 A constructor position may nest substitution sorts in containers (`List tm`, `tm × tm`,
-`List (tm × tm)`, …). Recursive unary containers (`List`/`Option`, **plus any user inductive
-recognised on demand**) get a **mutual structural helper** `<op>_<s>_<shape>` (Lean can't recurse
-through an opaque/`List.map`-style functor — see `memory/phase9-container-architecture.md`); the
-binary `Prod` is handled **inline** by projections. Helpers compose so nestings work.
+`List (tm × tm)`, …). Recursive containers (`List`/`Option`, **plus any user inductive recognised
+on demand**) get a **mutual structural helper** `<op>_<s>_<shape>` (Lean can't recurse through an
+opaque/`List.map`-style functor — see `memory/phase9-container-architecture.md`); the binary `Prod`
+is handled **inline** by projections. Helpers compose so nestings work.
 
-The generator threads `containers : Containers` — the unary container heads of this signature,
+The generator threads `containers : Containers` — the polynomial container heads of this signature,
 **each paired with its `ContainerShape`** (computed once by `Frontend.Elab`, so no re-analysis per
 use site). `Prod` is recognised separately (inline), so it is not in this map. -/
 
-/-- The unary container heads of a signature, each with its constructor classification. -/
+/-- The container heads of a signature, each with its constructor classification. -/
 abbrev Containers := List (Name × ContainerShape)
 
-/-- The shape of head `f`, if it is one of this signature's (unary) containers. -/
+/-- The shape of head `f`, if it is one of this signature's containers. -/
 def shapeOf (containers : Containers) (f : Name) : Option ContainerShape :=
   (containers.find? (·.1 == f)).map (·.2)
 
-/-- The shape-suffix word of a recursive unary container head, or `none` if `f` is not one (`Prod`
-is inline, not recursive). User containers contribute their (last-component) name. -/
+/-- The shape-suffix word of a recursive container head, or `none` if `f` is not one (`Prod` is
+inline, not recursive). User containers contribute their name. -/
 def recContainerWord (containers : Containers) : Name → Option String
   | `List => some "list"
   | `Option => some "option"
@@ -70,16 +70,54 @@ def recContainerWord (containers : Containers) : Name → Option String
 /-- The binary product container — handled inline by projections, no helper. -/
 def isProdHead (f : Name) : Bool := f == `Prod
 
-/-- A compact suffix encoding a head's container shape for helper naming (leaf sorts elided,
-which keeps single-sort signatures unambiguous): `List tm`→"list", `Option tm`→"option",
-`List (tm × tm)`→"list_prod", `Tree tm`→"Tree". -/
-partial def shapeSuffix (containers : Containers) : IR.ArgHead → String
-  | .sort _ => ""
-  | .ext _ => "ext"
+/-- Does a head mention a declared sort anywhere inside it? Such heads need traversal when they sit
+under a recognised container. -/
+partial def headMentionsSort : IR.ArgHead → Bool
+  | .sort _ _ => true
+  | .ext _ | .opaque _ => false
+  | .functor _ args => args.any headMentionsSort
+
+/-- A readable word for a head in helper names when a multi-parameter container needs its arguments
+spelled out to avoid collisions (`PairBox Ty Tm`, `PairBox Tm Nat`, …). -/
+partial def headNameWord (containers : Containers) : IR.ArgHead → String
+  | .sort s args =>
+    let suffixes := args.map (headNameWord containers) |>.filter (· ≠ "ext")
+    if suffixes.isEmpty then s.getString! else s!"{s.getString!}_{String.intercalate "_" suffixes}"
+  | .ext e => e.getString!
+  | .opaque _ => "opaque"
   | .functor f args =>
-    match recContainerWord containers f, args with
-    | some w, [sub] => let s := shapeSuffix containers sub; if s.isEmpty then w else s!"{w}_{s}"
-    | _, _ =>
+    if isProdHead f then
+      let parts := args.map (headNameWord containers)
+      "prod_" ++ String.intercalate "_" parts
+    else
+      let base := (recContainerWord containers f).getD f.getString!
+      let parts := args.map (headNameWord containers)
+      if parts.isEmpty then base else s!"{base}_{String.intercalate "_" parts}"
+
+/-- A compact suffix encoding a head's container shape for helper naming. Legacy unary names stay
+short (`List tm`→"list", `Tree tm`→"Tree", `PBox Srt tm`→"PBox"). Containers with multiple active
+or non-final active parameters spell out their arguments (`PairBox Ty tm`→"PairBox_Ty_tm"). -/
+partial def shapeSuffix (containers : Containers) : IR.ArgHead → String
+  | .sort _ _ => ""
+  | .ext _ | .opaque _ => "ext"
+  | .functor f args =>
+    match recContainerWord containers f with
+    | some w =>
+      let active := Id.run do
+        let mut out : List Nat := []
+        let mut i := 0
+        for a in args do
+          if headMentionsSort a then out := out ++ [i]
+          i := i + 1
+        out
+      if active == [args.length - 1] then
+        match args.getLast? with
+        | some sub => let s := shapeSuffix containers sub; if s.isEmpty then w else s!"{w}_{s}"
+        | none => w
+      else
+        let parts := args.map (headNameWord containers)
+        if parts.isEmpty then w else s!"{w}_{String.intercalate "_" parts}"
+    | none =>
       if isProdHead f then
         let parts := (args.map (shapeSuffix containers)).filter (· ≠ "")
         if parts.isEmpty then "prod" else "prod_" ++ String.intercalate "_" parts
@@ -116,16 +154,18 @@ def genUp (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `
   let composed ← `($funcompI $renApp sigma)
   let body ← if b == v then `($(sconsI sc) ($(mkIdent (v ++ varName v)) $(varZeroI sc)) $composed)
              else pure composed
+  let pbs ← sigImplicitBinders sig
   if !sc then
-    `(command| @[reducible] def $(mkIdent (upName b v)) (sigma : Nat → $(mkIdent v)) :
-        Nat → $(mkIdent v) := $body)
+    `(command| @[reducible] def $(mkIdent (upName b v)) $pbs* (sigma : Nat → $(← sortTyAt sc sig v "n")) :
+        Nat → $(← sortTyAt sc sig v "n") := $body)
   else
     let m := scopeVar "m" v
     let domD ← addOnes m (if b == v then 1 else 0)
-    let mut cod : Term := mkIdent v
-    for u in vecOf sig v do cod ← `($cod $(← addOnes (scopeVar "n" u) (if u == b then 1 else 0)))
+    let scopeArgs ← (vecOf sig v).mapM fun u =>
+      addOnes (scopeVar "n" u) (if u == b then 1 else 0)
+    let cod ← sortTyWithScopeArgs sig v scopeArgs
     let sigmaTy ← `(Fin $m → $(← sortTyAt sc sig v "n"))
-    `(command| @[reducible] def $(mkIdent (upName b v)) (sigma : $sigmaTy) :
+    `(command| @[reducible] def $(mkIdent (upName b v)) $pbs* (sigma : $sigmaTy) :
         Fin $domD → $cod := $body)
 
 /-! ## Variadic up-helpers (`bind ⟨p, b⟩`, scoped-only).
@@ -162,10 +202,12 @@ def genUpList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command)
   let body ← if b == v then `($sconsPI p ($funcompI $varV ($zeroPI p)) $composed) else pure composed
   let m := scopeVar "m" v
   let domD ← if b == v then `($m + p) else pure (m : Term)
-  let mut cod : Term := mkIdent v
-  for u in vecOf sig v do cod ← `($cod $(← if u == b then `($(scopeVar "n" u) + p) else pure (scopeVar "n" u : Term)))
+  let scopeArgs ← (vecOf sig v).mapM fun u =>
+    if u == b then `($(scopeVar "n" u) + p) else pure (scopeVar "n" u : Term)
+  let cod ← sortTyWithScopeArgs sig v scopeArgs
   let sigmaTy ← `(Fin $m → $(← sortTyAt true sig v "n"))
-  `(command| @[reducible] def $(mkIdent (upListName b v)) (p : Nat) (sigma : $sigmaTy) :
+  let pbs ← sigImplicitBinders sig
+  `(command| @[reducible] def $(mkIdent (upListName b v)) $pbs* (p : Nat) (sigma : $sigmaTy) :
       Fin $domD → $cod := $body)
 
 /-! ## ren / subst -/
@@ -189,7 +231,7 @@ partial def genHeadValue (containers : Containers) (sig : Signature) (forRen : B
     (vecS : List SortId) (binders : List IR.Binder) (head : IR.ArgHead) (x : Term) :
     CommandElabM Term := do
   match head with
-  | .sort w =>
+  | .sort w _ =>
     let vecW := vecOf sig w
     if vecW.isEmpty then return x
     let mut call : Term := mkIdent (opName forRen w)
@@ -203,13 +245,13 @@ partial def genHeadValue (containers : Containers) (sig : Signature) (forRen : B
         let vb ← genHeadValue containers sig forRen s vecS binders b (← `($x.2))
         `(($va, $vb))
       | _ => return x
-    else match recContainerWord containers f, args with
-      | some _, [_] =>
+    else match recContainerWord containers f with
+      | some _ =>
         let mut call : Term := mkIdent (helperOpName containers forRen s head)
         for v in vecS do call ← `($call $(← mapUnder forRen binders v))
         `($call $x)
-      | _, _ => return x
-  | .ext _ => return x
+      | none => return x
+  | .ext _ | .opaque _ => return x
 
 /-- Build the field expression for one constructor position of sort `s`. -/
 def genField (containers : Containers) (sig : Signature) (forRen : Bool) (s : SortId)
@@ -244,13 +286,16 @@ def mapParamBinders (sc : Bool) (sig : Signature) (forRen : Bool) (vec : List So
     CommandElabM (Array (TSyntax ``Lean.Parser.Term.bracketedBinder)) :=
   vec.toArray.mapM fun v => mapBinder sc sig forRen v "m" "n" (mapParam forRen v)
 
-/-- All sub-heads (incl. self) whose outermost is a recursive container (`List`/`Option`) — the
-heads that need a mutual structural helper. Nested containers contribute their inner ones too. -/
+/-- All sub-heads (incl. self) whose outermost is a recursive container (`List`/`Option`/user
+container) — the heads that need a mutual structural helper. Nested containers contribute their
+inner ones too. -/
 partial def collectHelperHeads (containers : Containers) : IR.ArgHead → List IR.ArgHead
-  | .sort _ | .ext _ => []
+  | .sort _ args => args.flatMap (collectHelperHeads containers)
+  | .ext _ | .opaque _ => []
   | .functor f args =>
     let subs := args.flatMap (collectHelperHeads containers)
-    if (recContainerWord containers f).isSome then (.functor f args) :: subs else subs
+    if (recContainerWord containers f).isSome && args.any headMentionsSort
+    then (.functor f args) :: subs else subs
 
 /-- The `(sort, head)` pairs needing a helper in this component (deduped). -/
 def helperHeadsOf (containers : Containers) (sig : Signature) (comp : List SortId) :
@@ -264,25 +309,28 @@ def helperHeadsOf (containers : Containers) (sig : Signature) (comp : List SortI
           unless acc.contains pair do acc := acc ++ [pair]
   return acc
 
-/-- The transformed value of one helper-element argument of `ArgKind` `k`: an element (`α`) is
-substituted via `genHeadValue` on the container's element head `sub`; a recursive (`F α`) argument
+/-- The transformed value of one helper-element argument of `ArgKind` `k`: an element parameter
+slot is substituted via `genHeadValue` on the matching applied argument head; a recursive occurrence
 recurses through the helper (`tailCall`); an inert argument is carried unchanged. -/
 def genHelperArg (containers : Containers) (sig : Signature) (forRen : Bool) (s : SortId)
-    (vecS : List SortId) (sub : IR.ArgHead) (tailCall : Term) (k : ArgKind) (x : Ident) :
+    (vecS : List SortId) (args : List IR.ArgHead) (tailCall : Term) (k : ArgKind) (x : Ident) :
     CommandElabM Term := do
   match k with
-  | .elem    => genHeadValue containers sig forRen s vecS [] sub x
+  | .elem i  =>
+      match args[i]? with
+      | some sub => genHeadValue containers sig forRen s vecS [] sub x
+      | none => pure x
   | .recurse => `($tailCall $x)
   | .inert   => pure x
 
-/-- The mutual structural helper for a unary-container head in sort `s` (threads `s`'s map vector;
-element transform via `genHeadValue`, so nestings compose). The container — `List`, `Option`, or any
-**registered user inductive** — is destructured per its constructors via the derived `ContainerShape`
-(its `map` and this helper come from one source). The binary `Prod` is handled inline by `genHeadValue`
-(no helper); only single-element containers reach here. -/
+/-- The mutual structural helper for a container head in sort `s` (threads `s`'s map vector; element
+transforms via `genHeadValue`, so nestings compose). The container — `List`, `Option`, or any
+recognised user inductive — is destructured per its constructors via the derived `ContainerShape`.
+The binary `Prod` is handled inline by `genHeadValue` (no helper). -/
 def genHelperDef (containers : Containers) (sc : Bool) (sig : Signature) (forRen : Bool) (s : SortId)
     (head : IR.ArgHead) : CommandElabM (TSyntax `command) := do
   let vecS := vecOf sig s
+  let pbs ← sigImplicitBinders sig
   let params ← mapParamBinders sc sig forRen vecS
   let nmI := mkIdent (helperOpName containers forRen s head)
   let ty ← headToTerm sc sig [] head
@@ -290,27 +338,28 @@ def genHelperDef (containers : Containers) (sc : Bool) (sig : Signature) (forRen
   let mut tailCall : Term := nmI
   for m in mapArgs do tailCall ← `($tailCall $m)
   match head with
-  | .functor f [sub] =>
+  | .functor f args =>
     match shapeOf containers f with
-    | none => `(command| def $nmI $params* : $ty → $ty := id)
+    | none => `(command| def $nmI $pbs* $params* : $ty → $ty := id)
     | some shape =>
       let mut arms : Array (TSyntax ``Lean.Parser.Term.matchAlt) := #[]
       for (cName, kinds) in shape do
         let xs := (Array.range kinds.size).map (fun i => mkIdent (Name.mkSimple s!"x{i}"))
-        let rhs ← (xs.zip kinds).mapM fun (x, k) => genHelperArg containers sig forRen s vecS sub tailCall k x
+        let rhs ← (xs.zip kinds).mapM fun (x, k) => genHelperArg containers sig forRen s vecS args tailCall k x
         arms := arms.push (← `(Lean.Parser.Term.matchAltExpr| | $(mkIdent cName) $xs* => $(mkIdent cName) $rhs*))
-      `(command| def $nmI $params* : $ty → $ty $arms:matchAlt*)
-  | _ => `(command| def $nmI $params* : $ty → $ty := id)
+      `(command| def $nmI $pbs* $params* : $ty → $ty $arms:matchAlt*)
+  | _ => `(command| def $nmI $pbs* $params* : $ty → $ty := id)
 
 /-- The `ren_s` or `subst_s` definition (without the surrounding `mutual`). Scoped: maps thread
 `Fin m_v → Fin n_v` / `Fin m_v → v …` and the result is `s <m> → s <n>` (scope vars auto-bound). -/
 def genOp (containers : Containers) (sc : Bool) (sig : Signature) (forRen : Bool) (si : SortInfo) :
     CommandElabM (TSyntax `command) := do
   let s := si.name
+  let pbs ← sigImplicitBinders sig
   let params ← si.substVec.toArray.mapM fun v => mapBinder sc sig forRen v "m" "n" (mapParam forRen v)
   let alts ← genArms containers sig forRen si
   let dom ← sortTyAt sc sig s "m"; let cod ← sortTyAt sc sig s "n"
-  `(command| def $(mkIdent ((if forRen then renName else substName) s)) $params* :
+  `(command| def $(mkIdent ((if forRen then renName else substName) s)) $pbs* $params* :
       $dom → $cod $alts:matchAlt*)
 
 /-- Generate `ren`/`subst` for a component: a `mutual` block iff >1 sort gets the operation. -/

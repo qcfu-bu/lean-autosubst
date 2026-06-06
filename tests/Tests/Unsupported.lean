@@ -8,8 +8,8 @@ the behavior ever regresses to a silent (wrong) success.
   1. `variadic.sig`'s variadic binder `lam (p) : (bind ⟨p, tm⟩ in tm)` — supported in the
      **well-scoped** backend (see `Tests/Variadic.lean`) but **unported unscoped** (as upstream;
      it would otherwise lower to a single lift, silently wrong). The unscoped rejection is pinned here.
-  2. `fol.sig`'s custom/polyadic functor `Func : "cod (fin p)" (term) → term` — only `List`,
-     `Option` and `Prod` are threaded; a user `F : Functor` head is unported.
+  2. `fol.sig`'s custom/polyadic functor `Func : "cod (fin p)" (term) → term` — only `Prod`
+     and regular inductive containers are threaded; a user `F : Functor` head is unported.
   3. **Scoped containers** — nesting a standard container over a *scope-indexed* inductive is
      rejected by the Lean 4 **kernel**. This is a Lean-vs-Coq kernel difference (Coq's `-s coq`
      accepts these), not an Autosubst limitation; demonstrated at its root below. Unscoped
@@ -33,14 +33,15 @@ end XFail.VariadicBinder
 /-! ## 2. Function-space "functor" head (`fol.sig`'s `cod = fun α => Fin p → α`).
 
 Container heads are recognised **on demand**: a head `(F …)` wrapping a sort is threaded iff `F` is a
-regular polynomial functor (`Prod`, or a unary inductive — `List`/`Option`/a user tree). A function
-space has no constructors to recurse on (it is not a polynomial functor), so it is rejected. -/
+regular polynomial functor in its type parameters (`Prod`, `List`/`Option`, or a user tree/box/
+bifunctor). A function space has no constructors to recurse on (it is not a polynomial functor), so
+it is rejected. -/
 namespace XFail.CustomFunctor
 open Autosubst
 
 def cod (α : Type) := Nat → α     -- a function-space "functor", like `fol`'s `cod (fin p)`
 
-/-- error: Cannot thread substitution through container head 'cod' in constructor 'Func' of sort 'term': 'cod' must be `Prod` or a single-parameter inductive whose constructor arguments are only the parameter, a recursive occurrence, or parameter-free types (a List/Option/Tree-like regular functor). Function-space or non-regular types (like `cod`) are unsupported. -/
+/-- error: Cannot thread substitution through container head 'cod' in constructor 'Func' of sort 'term': 'cod' must be `Prod` or an inductive regular in its type parameters, whose constructor arguments use parameters only as elements, uniform recursive occurrences, or not at all (a List/Option/Tree/PairBox-like regular functor). Function-space or non-regular types (like `cod`) are unsupported. -/
 #guard_msgs in
 autosubst
   term where

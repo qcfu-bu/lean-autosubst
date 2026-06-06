@@ -158,7 +158,7 @@ def genCtorCongr (ctorName : Name) (arity : Nat) : CommandElabM (TSyntax `comman
 partial def genRecPos (sc : Bool) (fam : Family) (sig : Signature) (pos : IR.Position) (x : Ident) :
     CommandElabM Term := do
   match pos.head with
-  | .sort w =>
+  | .sort w _ =>
     let vecW := vecOf sig w
     if vecW.isEmpty then return (← `(rfl))
     -- map arguments: each set, lifted under binders, over w's components
@@ -177,6 +177,7 @@ partial def genRecPos (sc : Bool) (fam : Family) (sig : Signature) (pos : IR.Pos
 def genRecLemma (sc : Bool) (fam : Family) (sig : Signature) (si : SortInfo) : CommandElabM (TSyntax `command) := do
   let s := si.name
   let vec := si.substVec
+  let pbs ← sigImplicitBinders sig
   let params ← recLemmaParams sc sig fam vec
   let tId := mkIdent `t
   let (lhs, rhs) ← fam.mkConcl sig s tId
@@ -196,7 +197,7 @@ def genRecLemma (sc : Bool) (fam : Family) (sig : Signature) (si : SortInfo) : C
       let proofs ← (c.positions.toArray.zip xs).mapM fun (pos, x) => genRecPos sc fam sig pos x
       appAll (mkIdent (congrName c.name)) proofs.toList
     alts := alts.push (← `(Lean.Parser.Term.matchAltExpr| | $pat => $rhs2))
-  `(command| theorem $(mkIdent (fam.lemmaName s)) $params* : ∀ ($tId : $tTy), $lhs = $rhs
+  `(command| theorem $(mkIdent (fam.lemmaName s)) $pbs* $params* : ∀ ($tId : $tTy), $lhs = $rhs
       $alts:matchAlt*)
 
 /-! ## Phase 9 — container sorts: the mutual lemma + `*_list` helper lemma. -/
@@ -228,7 +229,7 @@ partial def genHeadProof (containers : Containers) (sc : Bool) (fam : Family) (s
     let hypArgs ← vec.mapM (fun u => fam.liftedHyp sc sig binders u)
     appAll (← appAll (mkIdent lemmaNm) mapArgs) (hypArgs ++ [arg])
   match head with
-  | .sort w => if (vecOf sig w).isEmpty then `(rfl) else applyLemma (fam.lemmaName w) (vecOf sig w) x
+  | .sort w _ => if (vecOf sig w).isEmpty then `(rfl) else applyLemma (fam.lemmaName w) (vecOf sig w) x
   | .functor f args =>
     if isProdHead f then
       match args with
@@ -237,29 +238,33 @@ partial def genHeadProof (containers : Containers) (sc : Bool) (fam : Family) (s
         let pb ← genHeadProof containers sc fam sig s vecS binders b (← `($x.2))
         `($(mkIdent ``Prod.ext) $pa $pb)
       | _ => `(rfl)
-    else match recContainerWord containers f, args with
-      | some _, [_] => applyLemma (helperLemmaName containers fam s head) vecS x
-      | _, _ => `(rfl)
-  | .ext _ => `(rfl)
+    else match recContainerWord containers f with
+      | some _ => applyLemma (helperLemmaName containers fam s head) vecS x
+      | none => `(rfl)
+  | .ext _ | .opaque _ => `(rfl)
 
 /-- The proof of one container-constructor argument of `ArgKind` `k` (the lemma-side analogue of
-`genHelperArg`): an element subproof via `genHeadProof`, a recursive subproof via the helper lemma
-(`tailProof x`), or `rfl` for an inert argument. -/
+`genHelperArg`): an element subproof via `genHeadProof` for the matching applied argument, a
+recursive subproof via the helper lemma (`tailProof x`), or `rfl` for an inert argument. -/
 def genHelperProofArg (containers : Containers) (sc : Bool) (fam : Family) (sig : Signature)
-    (s : SortId) (vecS : List SortId) (sub : IR.ArgHead) (tailProof : Term) (k : ArgKind) (x : Ident) :
+    (s : SortId) (vecS : List SortId) (args : List IR.ArgHead) (tailProof : Term) (k : ArgKind) (x : Ident) :
     CommandElabM Term := do
   match k with
-  | .elem    => genHeadProof containers sc fam sig s vecS [] sub x
+  | .elem i  =>
+      match args[i]? with
+      | some sub => genHeadProof containers sc fam sig s vecS [] sub x
+      | none => `(rfl)
   | .recurse => `($tailProof $x)
   | .inert   => `(rfl)
 
-/-- The container-helper lemma: maps the main recursive lemma over a unary container — `List`,
-`Option`, or any registered user inductive — structurally. The arms are derived from the
+/-- The container-helper lemma: maps the main recursive lemma over a container — `List`, `Option`,
+or any registered user inductive — structurally. The arms are derived from the
 `ContainerShape`, discharging each constructor with the generated `congrC_<ctor>` congruence (the
 generic analogue of `cons_congr`/`some_congr`). -/
 def genHelperLemma (containers : Containers) (sc : Bool) (fam : Family) (sig : Signature) (s : SortId)
     (head : IR.ArgHead) : CommandElabM (TSyntax `command) := do
   let vecS := vecOf sig s
+  let pbs ← sigImplicitBinders sig
   let params ← recLemmaParams sc sig fam vecS
   let xsId := mkIdent `xs
   let ho : Bool → Name := fun isRen => helperOpName containers isRen s head
@@ -268,13 +273,13 @@ def genHelperLemma (containers : Containers) (sc : Bool) (fam : Family) (sig : S
   let nm := helperLemmaName containers fam s head
   let renH := mkIdent (helperOpName containers true s head)
   let substH := mkIdent (helperOpName containers false s head)
-  let args := recLemmaArgs fam vecS
+  let recArgs := recLemmaArgs fam vecS
   match head with
-  | .functor f [sub] =>
+  | .functor f args =>
     match shapeOf containers f with
-    | none => `(command| theorem $(mkIdent nm) $params* : ∀ ($xsId : $ty), $lhsL = $rhsL := fun _ => rfl)
+    | none => `(command| theorem $(mkIdent nm) $pbs* $params* : ∀ ($xsId : $ty), $lhsL = $rhsL := fun _ => rfl)
     | some shape =>
-      let tailProof ← appAll (mkIdent nm) args   -- the helper lemma applied to its map/hyp args
+      let tailProof ← appAll (mkIdent nm) recArgs   -- the helper lemma applied to its map/hyp args
       let mut arms : Array (TSyntax ``Lean.Parser.Term.matchAlt) := #[]
       for (cName, kinds) in shape do
         let xs := (Array.range kinds.size).map (fun i => mkIdent (Name.mkSimple s!"x{i}"))
@@ -284,13 +289,13 @@ def genHelperLemma (containers : Containers) (sc : Bool) (fam : Family) (sig : S
             `(Lean.Parser.Term.matchAltExpr| | $(mkIdent cName) $xs* => rfl)
           else do
             let proofs ← (xs.zip kinds).mapM fun (x, k) =>
-              genHelperProofArg containers sc fam sig s vecS sub tailProof k x
+              genHelperProofArg containers sc fam sig s vecS args tailProof k x
             let term ← appAll (mkIdent (ctorCongrName cName)) proofs.toList
             `(Lean.Parser.Term.matchAltExpr|
               | $(mkIdent cName) $xs* => by simp only [$renH:ident, $substH:ident]; exact $term)
         arms := arms.push arm
-      `(command| theorem $(mkIdent nm) $params* : ∀ ($xsId : $ty), $lhsL = $rhsL $arms:matchAlt*)
-  | _ => `(command| theorem $(mkIdent nm) $params* : ∀ ($xsId : $ty), $lhsL = $rhsL := fun _ => rfl)
+      `(command| theorem $(mkIdent nm) $pbs* $params* : ∀ ($xsId : $ty), $lhsL = $rhsL $arms:matchAlt*)
+  | _ => `(command| theorem $(mkIdent nm) $pbs* $params* : ∀ ($xsId : $ty), $lhsL = $rhsL := fun _ => rfl)
 
 /-- The **unwrapped** theorem bodies of a recursive lemma for sort `si`: the main lemma, plus the
 container `*_list`/`*_option` helper lemmas when `si` nests a functor (Phase 9). The caller groups
@@ -303,6 +308,7 @@ def genRecBodies (containers : Containers) (sc : Bool) (fam : Family) (sig : Sig
     return #[← genRecLemma sc fam sig si]
   let s := si.name
   let vec := si.substVec
+  let pbs ← sigImplicitBinders sig
   let params ← recLemmaParams sc sig fam vec
   let tId := mkIdent `t
   let (lhs, rhs) ← fam.mkConcl sig s tId
@@ -329,7 +335,7 @@ def genRecBodies (containers : Containers) (sc : Bool) (fam : Family) (sig : Sig
         `(Lean.Parser.Term.matchAltExpr|
           | $pat => by simp only [$renE:ident, $substE:ident]; exact $term)
     alts := alts.push arm
-  let mainLemma ← `(command| theorem $(mkIdent (fam.lemmaName s)) $params* : ∀ ($tId : $tTy), $lhs = $rhs
+  let mainLemma ← `(command| theorem $(mkIdent (fam.lemmaName s)) $pbs* $params* : ∀ ($tId : $tTy), $lhs = $rhs
       $alts:matchAlt*)
   let helpers ← (helperHeadsOf containers sig [s]).toArray.mapM
     (fun (s', h) => genHelperLemma containers sc fam sig s' h)
@@ -340,28 +346,29 @@ def genRecBodies (containers : Containers) (sc : Bool) (fam : Family) (sig : Sig
 /-- Emit a simple up-helper. `b==v` splits on the freshly bound variable — `| 0 | n+1` (unscoped)
 or `Fin.cases` (scoped, definitionally reducing); `b≠v` is uniform `fun n => …`. `mkHyp`/`mkConcl`
 build the statement; `renApp` is the `congrArg` head. -/
-def genSimpleUp (sc : Bool) (nm : Name) (b v : SortId)
+def genSimpleUp (sc : Bool) (sig : Signature) (nm : Name) (b v : SortId)
     (mapBinders : CommandElabM (Array (TSyntax ``Lean.Parser.Term.bracketedBinder)))
     (hty concl renApp : CommandElabM Term) : CommandElabM (TSyntax `command) := do
   let nmI := mkIdent nm
+  let pbs ← sigImplicitBinders sig
   let bs ← mapBinders
   let h ← `(Lean.Parser.Term.bracketedBinderF| (h : $(← hty)))
   let cc ← concl
   let ra ← renApp
   if b == v then
     if sc then
-      `(command| theorem $nmI $bs* $h : $cc := Fin.cases rfl (fun n => $congrArgI $ra (h n)))
+      `(command| theorem $nmI $pbs* $bs* $h : $cc := Fin.cases rfl (fun n => $congrArgI $ra (h n)))
     else
-      `(command| theorem $nmI $bs* $h : $cc
+      `(command| theorem $nmI $pbs* $bs* $h : $cc
           | 0 => rfl
           | n + 1 => $congrArgI $ra (h n))
   else
-    `(command| theorem $nmI $bs* $h : $cc := fun n => $congrArgI $ra (h n))
+    `(command| theorem $nmI $pbs* $bs* $h : $cc := fun n => $congrArgI $ra (h n))
 
 /-- `upId_b_v`. (The map binders use **quotation-literal** names so they share hygiene with the
 `sigma`/`xi`/… referenced in the `hty`/`concl` quotations below — only the *type* is interpolated.) -/
 def genUpId (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) :=
-  genSimpleUp sc (upIdName b v) b v
+  genSimpleUp sc sig (upIdName b v) b v
     (do pure #[← `(Lean.Parser.Term.bracketedBinderF| (sigma : $(← mapTy sc sig false v "m" "m")))])
     (`(∀ x, sigma x = $(varCtorI v) x))
     (`(∀ x, $(mkIdent (upName b v)) sigma x = $(varCtorI v) x))
@@ -389,7 +396,7 @@ def genUpExtRen (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM (TSy
 /-- `upExt_b_v` (substitutions). -/
 def genUpExt (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) := do
   let subTy ← mapTy sc sig false v "m" "n"
-  genSimpleUp sc (upExtName b v) b v
+  genSimpleUp sc sig (upExtName b v) b v
     (do pure #[← `(Lean.Parser.Term.bracketedBinderF| (sigma : $subTy)),
                ← `(Lean.Parser.Term.bracketedBinderF| (tau : $subTy))])
     (`(∀ x, sigma x = tau x))
@@ -398,7 +405,7 @@ def genUpExt (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM (TSynta
 
 /-- `up_ren_subst_b_v`. -/
 def genUpRenSubst (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) :=
-  genSimpleUp sc (upRenSubstName b v) b v
+  genSimpleUp sc sig (upRenSubstName b v) b v
     (do pure #[ ← `(Lean.Parser.Term.bracketedBinderF| (xi : $(← mapTy sc sig true v "k" "l"))),
                 ← `(Lean.Parser.Term.bracketedBinderF| (tau : $(← mapTy sc sig false v "l" "m"))),
                 ← `(Lean.Parser.Term.bracketedBinderF| (theta : $(← mapTy sc sig false v "k" "m")))])
@@ -409,7 +416,7 @@ def genUpRenSubst (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM (T
 
 /-- `rinstInst_up_b_v`. -/
 def genRinstInstUp (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) :=
-  genSimpleUp sc (rinstInstUpName b v) b v
+  genSimpleUp sc sig (rinstInstUpName b v) b v
     (do pure #[ ← `(Lean.Parser.Term.bracketedBinderF| (xi : $(← mapTy sc sig true v "m" "n"))),
                 ← `(Lean.Parser.Term.bracketedBinderF| (sigma : $(← mapTy sc sig false v "m" "n")))])
     (`(∀ x, $funcompI $(varCtorI v) xi x = sigma x))
@@ -455,9 +462,10 @@ def renShiftPApp (sig : Signature) (b v : SortId) : CommandElabM Term := do
 /-- `upId_list_b_v` — `scons_p_eta` discharges the two branches (fresh ↦ `rfl`, shifted ↦ `ren`). -/
 def genUpIdList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) := do
   let sg := mkIdent `sigma; let hh := mkIdent `h; let varV := varCtorI v
+  let pbs ← sigImplicitBinders sig
   let sgB ← mapBinder true sig false v "m" "m" `sigma
   let renSh ← renShiftPApp sig b v
-  `(command| theorem $(mkIdent (upIdListName b v)) $(← pBinder) $sgB ($hh : ∀ x, $sg x = $varV x) :
+  `(command| theorem $(mkIdent (upIdListName b v)) $pbs* $(← pBinder) $sgB ($hh : ∀ x, $sg x = $varV x) :
       ∀ x, $(mkIdent (upListName b v)) $pI $sg x = $varV x :=
     fun z => $sconsPEtaI $pI $varV (fun x => $congrArgI $renSh ($hh x)) (fun _ => rfl) z)
 
@@ -473,9 +481,10 @@ def genUpExtRenList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `co
 /-- `upExt_list_b_v` — `scons_p_congr` (shifted branch via `ren_v (shift_p p)`). -/
 def genUpExtList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) := do
   let sg := mkIdent `sigma; let tau := mkIdent `tau; let hh := mkIdent `h
+  let pbs ← sigImplicitBinders sig
   let sgB ← mapBinder true sig false v "m" "n" `sigma; let tauB ← mapBinder true sig false v "m" "n" `tau
   let renSh ← renShiftPApp sig b v
-  `(command| theorem $(mkIdent (upExtListName b v)) $(← pBinder) $sgB $tauB
+  `(command| theorem $(mkIdent (upExtListName b v)) $pbs* $(← pBinder) $sgB $tauB
       ($hh : ∀ x, $sg x = $tau x) :
       ∀ x, $(mkIdent (upListName b v)) $pI $sg x = $(mkIdent (upListName b v)) $pI $tau x :=
     fun z => $sconsPCongrI $pI (fun _ => rfl) (fun x => $congrArgI $renSh ($hh x)) z)
@@ -485,6 +494,7 @@ The proof is assembled from shallow sub-quotations (`hf`/`hg`/`body`) to keep pa
 manageable, mirroring `genUpSubstRen`. -/
 def genUpRenSubstList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) := do
   let xi := mkIdent `xi; let tau := mkIdent `tau; let theta := mkIdent `theta; let hh := mkIdent `h
+  let pbs ← sigImplicitBinders sig
   let xiB ← mapBinder true sig true v "k" "l" `xi
   let tauB ← mapBinder true sig false v "l" "m" `tau
   let thB ← mapBinder true sig false v "k" "m" `theta
@@ -492,7 +502,7 @@ def genUpRenSubstList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `
   let hf ← `(fun z => $sconsPHeadI $pI _ _ z)
   let hg ← `(fun z => ($sconsPTailI $pI _ _ ($xi z)).trans ($congrArgI $renSh ($hh z)))
   let proof ← `(fun n => ($sconsPCompI $pI _ _ _ n).trans ($sconsPCongrI $pI $hf $hg n))
-  `(command| theorem $(mkIdent (upRenSubstListName b v)) $(← pBinder) $xiB $tauB $thB
+  `(command| theorem $(mkIdent (upRenSubstListName b v)) $pbs* $(← pBinder) $xiB $tauB $thB
       ($hh : ∀ x, $funcompI $tau $xi x = $theta x) :
       ∀ x, $funcompI ($(mkIdent (upListName b v)) $pI $tau) ($(mkIdent (upRenListName b v)) $pI $xi) x
          = $(mkIdent (upListName b v)) $pI $theta x := $proof)
@@ -500,6 +510,7 @@ def genUpRenSubstList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `
 /-- `up_subst_ren_list_b_v` — the `eq_trans` chain (`compRenRen_v` ×2 + `scons_p` laws). -/
 def genUpSubstRenList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) := do
   let sg := mkIdent `sigma; let zeta := mkIdent `zeta; let theta := mkIdent `theta; let hh := mkIdent `h
+  let pbs ← sigImplicitBinders sig
   let sgB ← mapBinder true sig false v "k" "l" `sigma
   let zetaB ← mapBinder true sig true v "l" "m" `zeta
   let thB ← mapBinder true sig false v "k" "m" `theta
@@ -514,7 +525,7 @@ def genUpSubstRenList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `
   let hgBody ← `(($c1).trans ((($c2).symm).trans ($congrArgI $renSh ($hh n))))
   let hg ← `(fun n => $hgBody)
   let proof ← `(fun n => ($sconsPCompI $pI _ _ _ n).trans ($sconsPCongrI $pI $hf $hg n))
-  `(command| theorem $(mkIdent (upSubstRenListName b v)) $(← pBinder) $sgB $zetaB $thB
+  `(command| theorem $(mkIdent (upSubstRenListName b v)) $pbs* $(← pBinder) $sgB $zetaB $thB
       ($hh : ∀ x, $funcompI ($(mkIdent (renName v)) $zeta) $sg x = $theta x) :
       ∀ x, $funcompI ($(mkIdent (renName v)) ($upRenL $pI $zeta)) ($(mkIdent (upListName b v)) $pI $sg) x
          = $(mkIdent (upListName b v)) $pI $theta x := $proof)
@@ -522,6 +533,7 @@ def genUpSubstRenList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `
 /-- `up_subst_subst_list_b_v` — the `eq_trans` chain (`compRenSubst_v` + `compSubstRen_v` + `scons_p`). -/
 def genUpSubstSubstList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) := do
   let sg := mkIdent `sigma; let tau := mkIdent `tau; let theta := mkIdent `theta; let hh := mkIdent `h
+  let pbs ← sigImplicitBinders sig
   let sgB ← mapBinder true sig false v "k" "l" `sigma
   let tauB ← mapBinder true sig false v "l" "m" `tau
   let thB ← mapBinder true sig false v "k" "m" `theta
@@ -538,7 +550,7 @@ def genUpSubstSubstList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax
   let hg ← `(fun n => $hgBody)
   let proof ← `(fun n => ($sconsPCompI $pI ($funcompI $varV ($zeroPI $pI)) _ _ n).trans
       ($sconsPCongrI $pI $hf $hg n))
-  `(command| theorem $(mkIdent (upSubstSubstListName b v)) $(← pBinder) $sgB $tauB $thB
+  `(command| theorem $(mkIdent (upSubstSubstListName b v)) $pbs* $(← pBinder) $sgB $tauB $thB
       ($hh : ∀ x, $funcompI ($(mkIdent (substName v)) $tau) $sg x = $theta x) :
       ∀ x, $funcompI ($(mkIdent (substName v)) ($upL $pI $tau)) ($upL $pI $sg) x
          = $upL $pI $theta x := $proof)
@@ -546,12 +558,13 @@ def genUpSubstSubstList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax
 /-- `rinstInst_up_list_b_v` — `scons_p_comp` + `scons_p_congr` (postcompose with `var_v`). -/
 def genRinstInstUpList (sig : Signature) (b v : SortId) : CommandElabM (TSyntax `command) := do
   let xi := mkIdent `xi; let sg := mkIdent `sigma; let hh := mkIdent `h; let varV := varCtorI v
+  let pbs ← sigImplicitBinders sig
   let xiB ← mapBinder true sig true v "m" "n" `xi; let sgB ← mapBinder true sig false v "m" "n" `sigma
   let renSh ← renShiftPApp sig b v
   let hg ← `(fun x => $congrArgI $renSh ($hh x))
   let proof ← `(fun n => ($sconsPCompI $pI _ _ $varV n).trans
       ($sconsPCongrI $pI (fun _ => rfl) $hg n))
-  `(command| theorem $(mkIdent (rinstInstUpListName b v)) $(← pBinder) $xiB $sgB
+  `(command| theorem $(mkIdent (rinstInstUpListName b v)) $pbs* $(← pBinder) $xiB $sgB
       ($hh : ∀ x, $funcompI $varV $xi x = $sg x) :
       ∀ x, $funcompI $varV ($(mkIdent (upRenListName b v)) $pI $xi) x
          = $(mkIdent (upListName b v)) $pI $sg x := $proof)
@@ -713,6 +726,7 @@ def genUpSubstRen (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM (T
   let renVzetas ← appAll (mkIdent (renName v)) zetas
   params := params.push (← `(Lean.Parser.Term.bracketedBinderF|
     ($hh : ∀ x, $funcompI $renVzetas $sg x = $th x)))
+  params := (← sigImplicitBinders sig) ++ params
   let renVupRen ← appAll (mkIdent (renName v)) upRenLifted
   let concl ← `(∀ x, $funcompI $renVupRen ($(mkIdent (upName b v)) $sg) x
       = $(mkIdent (upName b v)) $th x)
@@ -745,6 +759,7 @@ def genUpSubstSubst (sc : Bool) (sig : Signature) (b v : SortId) : CommandElabM 
   let substVtaus ← appAll (mkIdent (substName v)) taus
   params := params.push (← `(Lean.Parser.Term.bracketedBinderF|
     ($hh : ∀ x, $funcompI $substVtaus $sg x = $th x)))
+  params := (← sigImplicitBinders sig) ++ params
   let substVup ← appAll (mkIdent (substName v)) upLifted
   let concl ← `(∀ x, $funcompI $substVup ($(mkIdent (upName b v)) $sg) x
       = $(mkIdent (upName b v)) $th x)
@@ -828,6 +843,7 @@ def genCompWrapper (sc : Bool) (sig : Signature) (si : SortInfo) (nm nmF : Name)
     (pfx1 : String) (isRen1 : Bool) (pfx2 : String) (isRen2 : Bool)
     (mkTheta : SortId → CommandElabM Term) : CommandElabM (Array (TSyntax `command)) := do
   let s := si.name; let vec := si.substVec; let tI := mkIdent `t
+  let pbs ← sigImplicitBinders sig
   let innerOp := if isRen1 then renName else substName
   let outerOp := if isRen2 then renName else substName
   let resultOp := if isRen1 && isRen2 then renName else substName
@@ -842,22 +858,36 @@ def genCompWrapper (sc : Bool) (sig : Signature) (si : SortInfo) (nm nmF : Name)
   let rhs ← appAll (mkIdent (resultOp s)) (thetas ++ [idTm tI])
   let proof ← appAll (mkIdent (compNm s))
     (mapArgs ++ (← unders vec.length) ++ (← vec.mapM fun _ => `(fun _ => rfl)) ++ [idTm tI])
-  let applied ← `(command| theorem $(mkIdent nm) $b1* $b2* ($tI : $tTy) : $lhs = $rhs := $proof)
+  let applied ← `(command| theorem $(mkIdent nm) $pbs* $b1* $b2* ($tI : $tTy) : $lhs = $rhs := $proof)
   -- funext (map-level) form
   let op1App ← appAll (mkIdent (innerOp s)) (vec.map fun v => idTm (mapIdent pfx1 v))
   let op2App ← appAll (mkIdent (outerOp s)) (vec.map fun v => idTm (mapIdent pfx2 v))
+  let tyM ← sortTyAt sc sig s "m"
+  let tyK ← sortTyAt sc sig s "k"
+  let tyL ← sortTyAt sc sig s "l"
+  let op1App ← `(($op1App : $tyM → $tyK))
+  let op2App ← `(($op2App : $tyK → $tyL))
   let lhsF ← `($funcompI $op2App $op1App)
-  let rhsF ← appAll (mkIdent (resultOp s)) thetas
-  let funextForm ← `(command| theorem $(mkIdent nmF) $b1* $b2* :
+  let rhsF0 ← appAll (mkIdent (resultOp s)) thetas
+  let rhsF ← `(($rhsF0 : $tyM → $tyL))
+  let funextForm ← `(command| theorem $(mkIdent nmF) $pbs* $b1* $b2* :
       $lhsF = $rhsF := $funextI $(← appAll (mkIdent nm) mapArgs))
   return #[applied, funextForm]
 
 /-- All clean wrappers for one substitution sort. -/
 def genWrappers (sc : Bool) (sig : Signature) (si : SortInfo) : CommandElabM (Array (TSyntax `command)) := do
   let s := si.name; let vec := si.substVec; let tI := mkIdent `t
+  let pbs ← sigImplicitBinders sig
   let mut out : Array (TSyntax `command) := #[]
   let fc (g f : Term) : CommandElabM Term := `($funcompI $g $f)
   let tTy ← sortTyAt sc sig s "m"
+  let tTyN ← sortTyAt sc sig s "n"
+  let idxTyAt (st : String) (v : SortId) : CommandElabM Term :=
+    if sc then `(Fin $(scopeVar st v)) else `(Nat)
+  let varAt (st : String) (v : SortId) : CommandElabM Term := do
+    let idx ← idxTyAt st v
+    let ty ← sortTyAt sc sig v st
+    `(($(varCtorI v) : $idx → $ty))
   -- fusion laws (each produces the applied form + the funext/map-level form)
   out := out ++ (← genCompWrapper sc sig si (renRenName s) (renRenName' s) compRenRenName "xi" true "zeta" true
     (fun v => fc (mapIdent "zeta" v) (mapIdent "xi" v)))
@@ -870,63 +900,71 @@ def genWrappers (sc : Bool) (sig : Signature) (si : SortInfo) : CommandElabM (Ar
   -- rinstInst' / rinstInst
   let bxi ← mapBindersFor sc sig "xi" true "m" "n" vec
   let renApp ← opApp (renName s) (vec.map (mapIdent "xi")) tI
+  let varXiMaps ← vec.mapM fun v => do fc (← varAt "n" v) (mapIdent "xi" v)
   let substVarXi ← appAll (mkIdent (substName s))
-    ((← vec.mapM fun v => fc (varCtorI v) (mapIdent "xi" v)) ++ [idTm tI])
+    (varXiMaps ++ [idTm tI])
   let rinstProof ← appAll (mkIdent (rinstInstName s))
     ((vec.map fun v => idTm (mapIdent "xi" v)) ++ (← unders vec.length)
       ++ (← vec.mapM fun _ => `(fun _ => rfl)) ++ [idTm tI])
-  out := out.push (← `(command| theorem $(mkIdent (rinstInstPName s)) $bxi* ($tI : $tTy) :
+  out := out.push (← `(command| theorem $(mkIdent (rinstInstPName s)) $pbs* $bxi* ($tI : $tTy) :
       $renApp = $substVarXi := $rinstProof))
   let rinstApplied ← appAll (mkIdent (rinstInstPName s)) (vec.map fun v => idTm (mapIdent "xi" v))
-  let renPart ← appAll (mkIdent (renName s)) (vec.map fun v => idTm (mapIdent "xi" v))
-  let substPart ← appAll (mkIdent (substName s)) (← vec.mapM fun v => fc (varCtorI v) (mapIdent "xi" v))
-  out := out.push (← `(command| theorem $(mkIdent (rinstInstWName s)) $bxi* :
+  let renPart0 ← appAll (mkIdent (renName s)) (vec.map fun v => idTm (mapIdent "xi" v))
+  let substPart0 ← appAll (mkIdent (substName s)) varXiMaps
+  let renPart ← `(($renPart0 : $tTy → $tTyN))
+  let substPart ← `(($substPart0 : $tTy → $tTyN))
+  out := out.push (← `(command| theorem $(mkIdent (rinstInstWName s)) $pbs* $bxi* :
       $renPart = $substPart := $funextI $rinstApplied))
   -- instId' / instId
   let idSubstVar ← appAll (mkIdent (idSubstName s))
-    ((vec.map fun v => idTm (varCtorI v)) ++ (← vec.mapM fun _ => `(fun _ => rfl)) ++ [idTm tI])
+    ((← vec.mapM (varAt "m")) ++ (← vec.mapM fun _ => `(fun _ => rfl)) ++ [idTm tI])
   -- The `= id` forms (`instId`/`rinstId`) leave the scope ambiguous; we pin it with a **type
   -- ascription** `(subst_s var… : s<m> → s<m>)` rather than explicit `@`-scope-args, since
   -- `autoImplicit` orders the scope implicits by first appearance (not in substitution-vector
   -- order), so positional `@`-args would mis-assign them.
-  let asc (e : Term) : CommandElabM Term := if sc then `(($e : $tTy → $tTy)) else pure e
-  let substVarM ← asc (← appAll (mkIdent (substName s)) (vec.map fun v => idTm (varCtorI v)))
-  out := out.push (← `(command| theorem $(mkIdent (instIdPName s)) ($tI : $tTy) :
-      $(← appAll (mkIdent (substName s)) (vec.map fun v => idTm (varCtorI v))) $tI = $tI := $idSubstVar))
+  let asc (e : Term) : CommandElabM Term := `(($e : $tTy → $tTy))
+  let substVarM ← asc (← appAll (mkIdent (substName s)) (← vec.mapM (varAt "m")))
+  out := out.push (← `(command| theorem $(mkIdent (instIdPName s)) $pbs* ($tI : $tTy) :
+      $(← appAll (mkIdent (substName s)) (← vec.mapM (varAt "m"))) $tI = $tI := $idSubstVar))
   let instIdApplied ← appAll (mkIdent (instIdPName s)) []
-  out := out.push (← `(command| theorem $(mkIdent (instIdName s)) :
+  out := out.push (← `(command| theorem $(mkIdent (instIdName s)) $pbs* :
       $substVarM = id := $funextI $instIdApplied))
   -- rinstId' / rinstId
   let renId ← appAll (mkIdent (renName s)) ((vec.map fun _ => (idI : Term)) ++ [idTm tI])
   let rinstInstId ← appAll (mkIdent (rinstInstPName s)) ((vec.map fun _ => (idI : Term)) ++ [idTm tI])
   let instIdT ← appAll (mkIdent (instIdPName s)) [idTm tI]
-  out := out.push (← `(command| theorem $(mkIdent (rinstIdPName s)) ($tI : $tTy) :
+  out := out.push (← `(command| theorem $(mkIdent (rinstIdPName s)) $pbs* ($tI : $tTy) :
       $renId = $tI := ($rinstInstId).trans $instIdT))
   let renIdFn ← asc (← appAll (mkIdent (renName s)) (vec.map fun _ => (idI : Term)))
   let rinstIdApplied ← `(fun $tI => $(← appAll (mkIdent (rinstIdPName s)) [idTm tI]))
-  out := out.push (← `(command| theorem $(mkIdent (rinstIdName s)) :
+  out := out.push (← `(command| theorem $(mkIdent (rinstIdName s)) $pbs* :
       $renIdFn = id := $funextI $rinstIdApplied))
   -- varL / varLRen (open sorts only)
   if si.isOpen then
     let bsig ← mapBindersFor sc sig "sigma" false "m" "n" vec
-    let lhsL ← `($funcompI
-      $(← appAll (mkIdent (substName s)) (vec.map fun v => idTm (mapIdent "sigma" v))) $(varCtorI s))
-    out := out.push (← `(command| theorem $(mkIdent (varLName s)) $bsig* :
+    let xTyM ← idxTyAt "m" s
+    let substFn0 ← appAll (mkIdent (substName s)) (vec.map fun v => idTm (mapIdent "sigma" v))
+    let substFn ← `(($substFn0 : $tTy → $tTyN))
+    let varM ← varAt "m" s
+    let varN ← varAt "n" s
+    let lhsL ← `($funcompI $substFn $varM)
+    out := out.push (← `(command| theorem $(mkIdent (varLName s)) $pbs* $bsig* :
         $lhsL = $(mapIdent "sigma" s) := rfl))
     let bxi2 ← mapBindersFor sc sig "xi" true "m" "n" vec
-    let lhsLR ← `($funcompI
-      $(← appAll (mkIdent (renName s)) (vec.map fun v => idTm (mapIdent "xi" v))) $(varCtorI s))
-    let rhsLR ← `($funcompI $(varCtorI s) $(mapIdent "xi" s))
-    out := out.push (← `(command| theorem $(mkIdent (varLRenName s)) $bxi2* :
+    let renFn0 ← appAll (mkIdent (renName s)) (vec.map fun v => idTm (mapIdent "xi" v))
+    let renFn ← `(($renFn0 : $tTy → $tTyN))
+    let lhsLR ← `($funcompI $renFn $varM)
+    let rhsLR ← `($funcompI $varN $(mapIdent "xi" s))
+    out := out.push (← `(command| theorem $(mkIdent (varLRenName s)) $pbs* $bxi2* :
         $lhsLR = $rhsLR := rfl))
     -- the *applied* var laws — these fire inside `subst`/`ren` expressions during `asimp`
     let xN := mkIdent `x
-    let xTy ← if sc then `(Fin $(scopeVar "m" s)) else `(Nat)
-    let substApp ← appAll (mkIdent (substName s)) (vec.map fun v => idTm (mapIdent "sigma" v))
-    out := out.push (← `(command| theorem $(mkIdent (varLPName s)) $bsig* ($xN : $xTy) :
+    let xTy := xTyM
+    let substApp := substFn
+    out := out.push (← `(command| theorem $(mkIdent (varLPName s)) $pbs* $bsig* ($xN : $xTy) :
         $substApp ($(varCtorI s) $xN) = $(mapIdent "sigma" s) $xN := rfl))
-    let renApp3 ← appAll (mkIdent (renName s)) (vec.map fun v => idTm (mapIdent "xi" v))
-    out := out.push (← `(command| theorem $(mkIdent (varLRenPName s)) $bxi2* ($xN : $xTy) :
+    let renApp3 := renFn
+    out := out.push (← `(command| theorem $(mkIdent (varLRenPName s)) $pbs* $bxi2* ($xN : $xTy) :
         $renApp3 ($(varCtorI s) $xN) = $(varCtorI s) ($(mapIdent "xi" s) $xN) := rfl))
   return out
 
@@ -962,13 +1000,14 @@ def genLemmaCommands (containers : Containers) (sc : Bool) (sig : Signature) :
     if sc then for b in vbs do for v in opens do acc := acc.push (← g sig b v)
     return acc
   let mut cmds : Array (TSyntax `command) := #[]
-  -- constructor congruences for every unary container used (`List.cons`, `Option.some`, `Tree.node`,
+  -- constructor congruences for every recognised container used (`List.cons`, `Option.some`, `Tree.node`,
   -- …) — emitted once per ctor, the generic analogue of `cons_congr`/`some_congr` used by the
   -- container-helper lemmas. (`helperHeadsOf` already excludes the binary `Prod`, which is inline.)
   let mut seenCtors : List Name := []
   for comp in sig.components do
     for (_, h) in helperHeadsOf containers sig comp do
-      if let .functor f [_] := h then
+      if let .functor f args := h then
+      if !args.isEmpty then
         if let some shape := shapeOf containers f then
           for (cName, kinds) in shape do
             -- leaf ctors (nullary/all-inert) use a `rfl` arm, not `congrC`, so skip their congruence

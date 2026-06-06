@@ -46,6 +46,45 @@ def openSorts (sig : Signature) : List SortId :=
 def substSortsOf (sig : Signature) (comp : List SortId) : List SortInfo :=
   comp.filterMap (fun n => sig.sorts.find? (fun si => si.name == n && !si.substVec.isEmpty))
 
+/-- The shared parameter telescope for this signature. The analyzer currently requires all sorts in
+a signature to have compatible telescopes, so the first sort's telescope is canonical. -/
+def sigParams (sig : Signature) : List Param :=
+  sig.sorts.head?.map (·.params) |>.getD []
+
+/-- Reconstruct the user-facing binder for an inductive parameter. -/
+def paramBinder (p : Param) : CommandElabM (TSyntax ``Lean.Parser.Term.bracketedBinder) := do
+  let ty : Term := ⟨p.type⟩
+  if p.implicit then
+    `(Lean.Parser.Term.bracketedBinderF| { $(mkIdent p.name) : $ty })
+  else
+    `(Lean.Parser.Term.bracketedBinderF| ($(mkIdent p.name) : $ty))
+
+/-- Generated operations and lemmas rebind all sort parameters implicitly, even when the inductive
+parameter was explicit, so users do not have to write `subst_Tm Ann σ t`. -/
+def paramImplicitBinder (p : Param) : CommandElabM (TSyntax ``Lean.Parser.Term.bracketedBinder) := do
+  let ty : Term := ⟨p.type⟩
+  `(Lean.Parser.Term.bracketedBinderF| { $(mkIdent p.name) : $ty })
+
+def sigImplicitBinders (sig : Signature) :
+    CommandElabM (Array (TSyntax ``Lean.Parser.Term.bracketedBinder)) :=
+  sigParams sig |>.toArray.mapM paramImplicitBinder
+
+def sortParamArgs (sig : Signature) (v : SortId) : List Term :=
+  ((sig.sorts.find? (·.name == v)).map (·.params) |>.getD []).map fun p => (mkIdent p.name : Term)
+
+/-- Explicitly apply a generated sort/type former to arguments, bypassing implicit-argument
+inference. This is essential for sorts with implicit parameters (`@Tm Srt Ann`). -/
+def explicitApp (head : Ident) (args : List Term) : CommandElabM Term := do
+  if args.isEmpty then
+    pure head
+  else
+    let args := args.toArray
+    `(@$head $args*)
+
+/-- A generated sort applied to its declaration parameters plus explicit scope/index arguments. -/
+def sortTyWithScopeArgs (sig : Signature) (v : SortId) (scopes : List Term) : CommandElabM Term :=
+  explicitApp (mkIdent v) (sortParamArgs sig v ++ scopes)
+
 /-! ## Mode-dependent prelude identifiers -/
 
 def funcompI : Ident := mkIdent ``Autosubst.funcomp
@@ -64,17 +103,17 @@ def scopeVar (st : String) (v : SortId) : Ident := mkIdent (Name.mkSimple s!"{st
 /-- The sort `v` applied to its substitution-vector scopes at stage `st`. Unscoped (or a sort
 with empty vector, e.g. STLC's `ty`) ⟹ the bare sort identifier; otherwise `v st_u1 st_u2 …`. -/
 def sortTyAt (sc : Bool) (sig : Signature) (v : SortId) (st : String) : CommandElabM Term := do
-  let mut t : Term := mkIdent v
+  let mut scopes : List Term := []
   if sc then
-    for u in vecOf sig v do t ← `($t $(scopeVar st u))
-  return t
+    for u in vecOf sig v do scopes := scopes ++ [(scopeVar st u : Term)]
+  sortTyWithScopeArgs sig v scopes
 
 /-- The type of a map for component `v` from stage `domSt` to `codSt`:
 unscoped `Nat → Nat` / `Nat → v`; scoped `Fin domSt_v → Fin codSt_v` / `Fin domSt_v → v <cod>`. -/
 def mapTy (sc : Bool) (sig : Signature) (forRen : Bool) (v : SortId) (domSt codSt : String) :
     CommandElabM Term := do
   if !sc then
-    if forRen then `(Nat → Nat) else `(Nat → $(mkIdent v))
+    if forRen then `(Nat → Nat) else `(Nat → $(← sortTyAt sc sig v codSt))
   else if forRen then
     `(Fin $(scopeVar domSt v) → Fin $(scopeVar codSt v))
   else

@@ -83,6 +83,28 @@ unicode `→` or ASCII `->` (the two may be mixed), exactly as in Lean.
   variable it carries: `tm : Nat → Type`, `var_tm : Fin n → tm n`, `lam : ty → tm (n+1) → tm n`.
   Scope indices are auto-bound implicits.
 
+Sort declarations may also carry ordinary Lean-style parameters. Explicit and implicit binders are
+preserved on the generated inductive, while generated operations/lemmas rebind them implicitly so
+calls stay compact:
+
+```lean
+universe u v
+
+autosubst
+  Ty {Srt : Type u} (Ann : Type v) where
+    | base : Srt → Ty
+    | tag  : Ann → Ty
+
+  Tm {Srt : Type u} (Ann : Type v) where
+    | ann   : Tm → Ty Srt Ann → Tm     -- explicit sort application
+    | plain : Ty → Tm                  -- bare `Ty` means `Ty Srt Ann`
+    | ext   : opaque(Thunk Srt Ann) → Tm
+```
+
+All sorts in one mutual `autosubst` block currently share the same parameter telescope. The
+`opaque(e)` wrapper accepts an arbitrary Lean type expression and treats it as a foreign leaf field:
+renaming/substitution carry it unchanged and do not inspect it for sort occurrences.
+
 ### Binders: `bind a in h` and `bind a, b in h`
 
 A constructor argument that binds variables wraps its head type in a `bind … in …` annotation:
@@ -114,9 +136,10 @@ juxtaposition, exactly as in Lean — no parentheses at the top level; parenthes
 
 `List`/`Option`/`Prod` are **not privileged** — they are recognised by an **on-demand** check, the
 same one your own types go through. When `autosubst` meets a head `F …`, it reads `F`'s declaration:
-if `F` is a *regular polynomial functor* (each constructor argument is the type parameter, a
-recursive occurrence, or a parameter-free type), substitution threads through it. So you just *use*
-your container — **no registration, no `deriving`, nothing to write**:
+if `F` is a *regular polynomial functor* in its type parameters (each constructor argument is a type
+parameter, a uniform recursive occurrence, or a parameter-free/inert type), substitution threads
+through every applied argument that contains substitutable syntax. So you just *use* your container
+— **no registration, no `deriving`, nothing to write**:
 
 ```lean
 inductive Tree (α : Type) | leaf : α → Tree α | node : Tree α → Tree α → Tree α
@@ -125,6 +148,29 @@ autosubst
   tm where
     | branch : Tree tm → tm            -- threads through `Tree` automatically — `Tree` needs no markup
     | …
+```
+
+Parameterized and multi-parameter containers are supported too. Substitution follows the roles of
+the applied arguments: `PBox Srt Tm` changes only the `Tm` slot because `Srt` is external metadata,
+while `PairBox Ty Tm` changes both syntactic slots and `PairBox Tm Nat` changes the non-final slot.
+
+```lean
+inductive PBox (Srt : Type u) (α : Type v) where
+  | wrap : Srt → α → PBox Srt α
+
+inductive PairBox (α : Type u) (β : Type v) where
+  | both : α → β → PairBox α β
+  | roll : PairBox α β → PairBox α β
+
+autosubst
+  Ty {Srt : Type u} where
+    | marker : Srt → Ty
+    | arr : Ty → Ty → Ty
+
+  Tm {Srt : Type u} where
+    | boxed : PBox Srt Tm → Tm
+    | pair  : PairBox Ty Tm → Tm
+    | left  : PairBox Tm Nat → Tm
 ```
 
 A head that wraps a sort but *isn't* such a functor (a function space like `cod = fun α => Fin p →
@@ -226,7 +272,9 @@ signatures** (STLC, the container example, the variadic test), where the binder 
 component sort `v` are both forced. In a genuinely multi-sort signature the same map type is lifted
 by several binder sorts — in System F `up_tm_tm` and `up_ty_tm` are both `(Nat → tm) → (Nat → tm)` —
 so no single dispatched `⇑` exists and the explicit `up_b_v` names are used (this is also why
-upstream Autosubst gives `up` only a *printing* abbreviation).
+upstream Autosubst gives `up` only a *printing* abbreviation). Parameterized sorts currently get the
+raw generated operations and theorem tower, but not the notation instances; use names such as
+`subst_Tm`, `ren_Tm`, and `up_Tm_Tm` directly for those signatures.
 
 The application/function forms are **typeclass-dispatched** (`Subst1`/`Subst2`, `Ren1`/`Ren2`,
 `Var`), so one notation works across all sorts; `autosubst` emits one instance per sort. Dispatch
@@ -267,6 +315,7 @@ that representative `by asimp` goals close.
 | `variadic` (container part)      | `List` functor                                               |      ✅      |   ⛔ kernel†    |
 | `variadic` (binder `bind ⟨p,t⟩`) | variadic binding (runtime `p`)                               | ⛔ unported‡ | ✅ single-sort‡ |
 | (user)                           | own container, recognised on demand (a `Tree`)              |     ✅¶      |   ⛔ kernel†    |
+| `parameterized`                  | sort params, explicit sort refs, `opaque`, polynomial containers | ✅ raw ops§ | ✅ raw ops§ / ⛔ containers† |
 
 **†** Nesting a container over a *scope-indexed* inductive is rejected by the Lean 4 **kernel**
 (`invalid nested inductive datatype … parameters cannot contain local variables`). This is a
@@ -283,14 +332,23 @@ The fixed-arity `bind a, b` multi-binder *is* supported in both backends.
 
 **¶** A user's **own inductive** becomes a container with **nothing to write** — no registration, no
 attribute, no `deriving`. When `autosubst` meets a head `F …` it reads `F`'s declaration *on
-demand*: if `F` is a 1-parameter *regular polynomial functor* (every constructor argument is the
-parameter `α`, a recursive `F α`, or a parameter-free type), it derives a structural helper + a
-`congrC_F_<ctor>` congruence directly from the constructors and threads substitution through
+demand*: if `F` is a *regular polynomial functor* in its type parameters (constructor arguments use
+parameters only as elements, uniform recursive `F ...` occurrences, or not at all), it derives a
+structural helper and a `congrC_F_<ctor>` congruence directly from the constructors and threads substitution through
 ([tests/Tests/UserContainer.lean](tests/Tests/UserContainer.lean)). `List`/`Option` go through this
 *same* check — not special-cased; `Prod` is the lone inline case (binary, threaded by projections). A
 sort-wrapping head that *fails* the check is rejected with an **explicit error** — a **function-space**
 "functor" like `fol`'s `cod = fun α => Fin p → α` has no constructors to recurse on (asserted in
 `Tests/Unsupported.lean`), never a silent miscompile.
+
+**§** Parameterized sort declarations support multiple explicit/implicit Lean parameters and
+explicit sort references such as `Ty Srt Ann`. Multi-parameter user containers are recognised when
+they are regular polynomial functors in their type parameters; each applied argument is threaded
+according to the syntax it contains, including non-final arguments. As with other containers, nesting
+them over a well-scoped indexed family hits the Lean kernel limitation above. The generated raw
+operations/lemmas, including a scoped non-container parameterized signature, are covered by
+[tests/Tests/Parameterized.lean](tests/Tests/Parameterized.lean); the opt-in notation instances are
+still emitted only for unparameterized sorts.
 
 Each ⛔ above is asserted (with `#guard_msgs`) in
 [tests/Tests/Unsupported.lean](tests/Tests/Unsupported.lean), so a regression to a silent success
@@ -302,7 +360,10 @@ generated operations — is in [tests/Tests/CaseStudy.lean](tests/Tests/CaseStud
 Custom variable-constructor renaming (`tm(tRel)` in `utlc.sig`) — `var_<sort>` is fixed by the name
 contract. Constructor/sort names must be valid Lean identifiers, so reserved tokens (`λ`) and
 non-letter unicode are unavailable (a Lean lexical constraint). Autosubst's *modular* syntax feature
-is out of scope (as in the OCaml port).
+is out of scope (as in the OCaml port). User-defined indexed sort families beyond the well-scoped
+`Nat`/`Fin` backend are also not modelled: supporting arbitrary indices would require dependent
+renaming/substitution maps indexed by the source family index, rather than the current homogeneous
+map vector per open sort.
 
 ## Building
 

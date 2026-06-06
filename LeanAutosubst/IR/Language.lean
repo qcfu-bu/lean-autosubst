@@ -20,6 +20,14 @@ namespace Autosubst.IR
 declarations can use it directly. -/
 abbrev SortId := Name
 
+/-- A declaration parameter on a syntactic sort. The DSL preserves Lean's explicit/implicit binder
+surface, while generated operations usually rebind these as implicit parameters. -/
+structure Param where
+  name : Name
+  type : Syntax
+  implicit : Bool
+  deriving Repr, BEq, Inhabited
+
 /-- A binder introduced at a constructor-argument position. `single s` is `bind s in _`;
 `vector p s` is the variadic `bind <p, s> in _`. -/
 inductive Binder where
@@ -33,25 +41,29 @@ def Binder.boundSort : Binder → SortId
   | .vector _ s => s
 
 /-- The head type of a constructor argument, after stripping its binders.
-`sort s` references a declared sort; `functor f args` is a container applied to sub-heads;
-`ext` is an external Lean type opaque to substitution (carried, never recursed into). -/
+`sort s args` references a declared sort, possibly with explicit parameter/index arguments;
+`functor f args` is a container/type former applied to sub-heads; `ext` is an external Lean
+identifier opaque to substitution; `opaque stx` is an arbitrary Lean type expression carried
+unchanged by substitution. -/
 inductive ArgHead where
-  | sort (s : SortId)
+  | sort (s : SortId) (args : List ArgHead)
   | functor (f : Name) (args : List ArgHead)
   | ext (head : Name)
+  | opaque (stx : Syntax)
   deriving Repr, BEq, Inhabited
 
 /-- All declared sorts mentioned (recursively) in a head — used to build the dependency
 graph. `ext` heads contribute none. Mirrors `language.ml`'s `getArgSorts`. -/
 partial def ArgHead.argSorts : ArgHead → List SortId
-  | .sort s => [s]
+  | .sort s args => s :: args.flatMap ArgHead.argSorts
   | .functor _ args => args.flatMap ArgHead.argSorts
-  | .ext _ => []
+  | .ext _ | .opaque _ => []
 
 /-- Every functor/container head name occurring (recursively) in an argument head — the candidates
 the analyzer/generator test for container-hood on demand. -/
 partial def ArgHead.functorHeads : ArgHead → List SortId
-  | .sort _ | .ext _ => []
+  | .sort _ args => args.flatMap ArgHead.functorHeads
+  | .ext _ | .opaque _ => []
   | .functor f args => f :: args.flatMap ArgHead.functorHeads
 
 /-- A constructor argument: a (possibly empty) list of binders wrapping a head type.
@@ -71,6 +83,7 @@ structure Constructor where
 /-- A declared sort together with its (non-variable) constructors. -/
 structure SortDecl where
   name : SortId
+  params : List Param := []
   ctors : List Constructor
   deriving Repr, BEq, Inhabited
 

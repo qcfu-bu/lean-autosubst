@@ -32,17 +32,22 @@ def congrName (c : Name) : Name := Name.mkSimple s!"congr_{c}"
 partial def headToTerm (sc : Bool) (sig : Signature) (binders : List Binder) (h : ArgHead) :
     CommandElabM Term := do
   match h with
-  | .sort w =>
-    if !sc then pure (mkIdent w)
+  | .sort w args =>
+    if !args.isEmpty then
+      let argTerms ← args.mapM (headToTerm sc sig [])
+      explicitApp (mkIdent w) argTerms
+    else if !sc then
+      sortTyAt sc sig w "n"
     else
       let vec := vecOf sig w
-      if vec.isEmpty then pure (mkIdent w)
+      if vec.isEmpty then sortTyAt sc sig w "n"
       else
-        let mut t : Term := mkIdent w
+        let mut t ← sortTyAt false sig w "n"
         for u in vec do
           t ← `($t $(← scopeBumped "n" binders u))
         pure t
   | .ext e  => pure (mkIdent e)
+  | .opaque stx => pure ⟨stx⟩
   | .functor f args => do
       -- containers carry their elements unchanged structurally; element binders propagate.
       let mut t : Term := mkIdent f
@@ -92,7 +97,7 @@ def isIndexed (sc : Bool) (sig : Signature) (si : SortInfo) : Bool :=
 
 /-- The `Nat → … → Type` header type for a scope-indexed sort (one `Nat` per vector entry). -/
 def indexedHeader (sig : Signature) (si : SortInfo) : CommandElabM Term := do
-  let mut hdr : Term ← `(Type)
+  let mut hdr : Term ← `(Type _)
   for _ in vecOf sig si.name do hdr ← `(Nat → $hdr)
   return hdr
 
@@ -106,10 +111,12 @@ def genInductive (sc : Bool) (sig : Signature) (si : SortInfo) : CommandElabM (T
   let ctys := ctors.map (·.2)
   if isIndexed sc sig si then
     let hdr ← indexedHeader sig si
-    `(command| inductive $(mkIdent si.name) : $hdr where
+    let pbs ← si.params.toArray.mapM paramBinder
+    `(command| inductive $(mkIdent si.name) $pbs* : $hdr where
         $[| $cnames:ident : $ctys:term]*)
   else
-    `(command| inductive $(mkIdent si.name) where
+    let pbs ← si.params.toArray.mapM paramBinder
+    `(command| inductive $(mkIdent si.name) $pbs* where
         $[| $cnames:ident : $ctys:term]*)
 
 /-- The inductive command for a whole component (a `mutual` block iff the SCC is non-trivial). -/
@@ -124,8 +131,8 @@ def genComponent (sc : Bool) (sig : Signature) (comp : List SortId) : CommandEla
 /-- Does this head (recursively) carry substitutable content — a `.sort w` whose `ren`/`subst`
 actually does something (non-empty vector)? External heads and sorts with empty vectors don't. -/
 partial def headSubstitutable (sig : Signature) : ArgHead → Bool
-  | .sort w => !(vecOf sig w).isEmpty
-  | .ext _ => false
+  | .sort w args => !(vecOf sig w).isEmpty || args.any (headSubstitutable sig)
+  | .ext _ | .opaque _ => false
   | .functor _ args => args.any (headSubstitutable sig)
 
 /-- A *leaf* constructor carries no substitutable content: nullary, or all-`ext` like
