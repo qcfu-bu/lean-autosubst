@@ -75,7 +75,8 @@ autosubst wellscoped   -- well-scoped: variables are `Fin n`, `var_tm : Fin n �
 The block *reads* like (mutual) Lean `inductive`s, but it is **never elaborated as one** — it is
 captured as syntax, lowered to a first-order de Bruijn inductive (binders erased), and only that
 strictly-positive inductive reaches the kernel. So `bind`-annotated "function arrows" never become
-real function types and positivity is a non-issue.
+real function types and positivity is a non-issue. Constructor arrows may be written with either the
+unicode `→` or ASCII `->` (the two may be mixed), exactly as in Lean.
 
 * **Unscoped** (default) — `tm : Type`, `var_tm : Nat → tm`, `lam : ty → tm → tm`.
 * **Well-scoped** (`wellscoped`) — each substitution sort is indexed by one `Nat` per kind of
@@ -96,32 +97,33 @@ A constructor argument that binds variables wraps its head type in a `bind … i
 per binder (`up ∘ up …`); in well-scoped mode the body's scope jumps accordingly (`tm (n+1+1)`). See
 [LeanAutosubst/Examples/PairBindDsl.lean](LeanAutosubst/Examples/PairBindDsl.lean).
 
-### Container heads `(F a)` and external types
+### Container heads `F a` and external types
 
 A substitutable sort may be nested inside a container — `List`, `Option`, `Prod`, **or any inductive
-of your own** — and substitution threads through it automatically. Container application uses
-parentheses:
+of your own** — and substitution threads through it automatically. Container application is plain
+juxtaposition, exactly as in Lean — no parentheses at the top level; parentheses are needed only to
+*nest* one application inside another (just as `List (Option α)` needs them in Lean):
 
 ```lean
-| seq : (List tm) → tm                    -- substitution maps over the list
-| opt : (Option tm) → tm
-| pr  : (Prod tm tm) → tm                 -- i.e. `tm × tm`
-| brs : (List (Prod tm tm)) → tm          -- nestings compose
-| lam : (bind tm in (List tm)) → tm       -- a binder *into* a container
+| seq : List tm → tm                    -- substitution maps over the list
+| opt : Option tm → tm
+| pr  : Prod tm tm → tm                 -- i.e. `tm × tm`
+| brs : List (Prod tm tm) → tm          -- nesting needs the inner parens
+| lam : (bind tm in List tm) → tm       -- a binder *into* a container
 ```
 
 `List`/`Option`/`Prod` are **not privileged** — they are recognised by an **on-demand** check, the
-same one your own types go through. When `autosubst` meets a head `(F …)`, it reads `F`'s
-declaration: if `F` is a *regular polynomial functor* (each constructor argument is the type
-parameter, a recursive occurrence, or a parameter-free type), substitution threads through it. So you
-just *use* your container — **no registration, no `deriving`, nothing to write**:
+same one your own types go through. When `autosubst` meets a head `F …`, it reads `F`'s declaration:
+if `F` is a *regular polynomial functor* (each constructor argument is the type parameter, a
+recursive occurrence, or a parameter-free type), substitution threads through it. So you just *use*
+your container — **no registration, no `deriving`, nothing to write**:
 
 ```lean
 inductive Tree (α : Type) | leaf : α → Tree α | node : Tree α → Tree α → Tree α
 
 autosubst
   tm where
-    | branch : (Tree tm) → tm          -- threads through `Tree` automatically — `Tree` needs no markup
+    | branch : Tree tm → tm            -- threads through `Tree` automatically — `Tree` needs no markup
     | …
 ```
 
@@ -280,7 +282,7 @@ The **unscoped** variadic form and the **multi-open-sort** scoped form are unpor
 The fixed-arity `bind a, b` multi-binder *is* supported in both backends.
 
 **¶** A user's **own inductive** becomes a container with **nothing to write** — no registration, no
-attribute, no `deriving`. When `autosubst` meets a head `(F …)` it reads `F`'s declaration *on
+attribute, no `deriving`. When `autosubst` meets a head `F …` it reads `F`'s declaration *on
 demand*: if `F` is a 1-parameter *regular polynomial functor* (every constructor argument is the
 parameter `α`, a recursive `F α`, or a parameter-free type), it derives a structural helper + a
 `congrC_F_<ctor>` congruence directly from the constructors and threads substitution through

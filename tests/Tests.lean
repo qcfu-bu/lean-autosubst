@@ -10,7 +10,7 @@ Build with `lake build Tests`.
 -/
 import Tests.Support
 import Tests.Stlc          -- stlc.sig + stlc-unicode.sig  (single sort; both backends)
-import Tests.SysF          -- sysf.sig                      (multi-sort, hierarchical; both backends)
+import Tests.SysfSN        -- sysf.sig + Church-style System F strong normalisation (both backends)
 import Tests.Fcbv          -- fcbv.sig                      (genuinely mutual tm↔vl; both backends)
 import Tests.Pi            -- pi.sig                        (name sort + nullary ctor; both backends)
 import Tests.NumPrelude    -- num.sig + prelude.sig         (external/foreign leaf types; both backends)
