@@ -34,23 +34,48 @@ declare_syntax_cat asBinder
 syntax (name := binderSingle) ident : asBinder
 syntax (name := binderVector) "⟨" ident ", " ident "⟩" : asBinder
 
-/-- A head type: a sort/atom ident, or a parenthesized functor application `(F a b …)`. -/
+/-- `asHead` is a head type; `asHeadArg` is an *atomic* functor argument. They are mutually
+recursive (a parenthesized head is an argument; a head applies to arguments), so both categories
+are declared before either's rules. -/
 declare_syntax_cat asHead
-syntax (name := headAtom) ident : asHead
-syntax (name := headApp) "(" ident asHead+ ")" : asHead
+declare_syntax_cat asHeadArg
 
-/-- A constructor argument: a head, or a binder annotation over a head, optionally parenthesized. -/
+/-- A functor argument: atomic, mirroring Lean application arguments parsed at `maxPrec` — a bare
+ident or a parenthesized head. Nesting a functor application therefore *requires* the parens
+(`List (Option tm)`), exactly as `List (Option α)` does in Lean. -/
+syntax (name := headArgAtom) ident : asHeadArg
+syntax (name := headArgParen) "(" asHead ")" : asHeadArg
+
+/-- A head type: a sort/ext ident, a functor application `F a b …` (juxtaposition, like Lean — the
+top-level application needs no parens), or a redundantly-parenthesized head `(…)`. Application binds
+tighter than the constructor-argument `→` separator, so `F a b → c` reads as `(F a b) → c`. -/
+syntax (name := headAtom) ident : asHead
+-- `withPosition`/`colGt` mirror Lean's `app` parser (`argument := checkColGt …`): an argument must be
+-- indented past the functor head. Without this guard the juxtaposition would greedily absorb the
+-- following line — e.g. a constructor's result sort `… → ty` would swallow the next sort's `tm` (or
+-- the next `| ctor`) as `ty tm`. This is what the old mandatory `( … )` delimiter bought us.
+syntax (name := headApp) withPosition(ident (colGt asHeadArg)+) : asHead
+syntax (name := headParen) "(" asHead ")" : asHead
+
+/-- A constructor argument: a head, or a `bind … in head` binder annotation. The binder annotation
+may be written parenthesized (`(bind tm in tm)`) or bare (`bind tm in tm`). A parenthesized *head*
+goes through `asHead`'s own paren form, so `(List tm)` and `List tm` are interchangeable as in Lean.
+The two leading-`(` forms diverge on the next token (`bind` keyword vs an ident), so they never
+clash. -/
 declare_syntax_cat asArg
 syntax (name := argHead) asHead : asArg
 syntax (name := argBind) "bind " asBinder,+ " in " asHead : asArg
-syntax (name := argParen) "(" asArg ")" : asArg
+syntax (name := argBindParen) "(" "bind " asBinder,+ " in " asHead ")" : asArg
 
 /-- A constructor: `| name (p : nat) … : arg → arg → … → resultSort`. The optional `(p : nat)`
 parameters are the runtime counts referenced by variadic binders `⟨p, _⟩` (scoped-only). -/
 declare_syntax_cat asCtorParam
 syntax (name := ctorParam) "(" ident " : " ident ")" : asCtorParam
 declare_syntax_cat asCtor
-syntax (name := ctorDecl) "| " ident asCtorParam* " : " asArg (" → " asArg)* : asCtor
+-- The separator accepts either the unicode `→` or the ASCII `->`, like Lean's own arrow. The
+-- elaborator reads child 1 (the `asArg`) of each `(sep asArg)` group, so the separator shape is
+-- irrelevant to it.
+syntax (name := ctorDecl) "| " ident asCtorParam* " : " asArg ((" → " <|> " -> ") asArg)* : asCtor
 
 /-- A sort declaration: `name where | … | …`. -/
 declare_syntax_cat asSortDecl

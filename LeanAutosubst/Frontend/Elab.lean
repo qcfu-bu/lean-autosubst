@@ -21,12 +21,17 @@ open Lean Elab Command
 namespace Autosubst.Frontend
 open Autosubst.IR
 
-/-- A head type ⟶ `ArgHead`. An ident is a declared sort (`.sort`) if known, else an external
-type (`.ext`); `(F a b …)` is a functor application. -/
+/-- A head (`asHead`) or functor argument (`asHeadArg`) ⟶ `ArgHead`. An ident is a declared sort
+(`.sort`) if known, else an external type (`.ext`); `F a b …` is a functor application; a
+parenthesized head is unwrapped. -/
 partial def parseHead (declared : List Name) (s : Syntax) : ArgHead :=
-  if s.getKind == ``headApp then
-    .functor s[1].getId (s[2].getArgs.toList.map (parseHead declared))
-  else -- headAtom
+  let k := s.getKind
+  if k == ``headApp then
+    -- `ident asHeadArg+`: child 0 is the functor name, child 1 the argument group.
+    .functor s[0].getId (s[1].getArgs.toList.map (parseHead declared))
+  else if k == ``headParen || k == ``headArgParen then
+    parseHead declared s[1]   -- `( asHead )` — unwrap
+  else -- headAtom / headArgAtom: a lone ident
     let id := s[0].getId
     if declared.contains id then .sort id else .ext id
 
@@ -35,14 +40,20 @@ def parseBinder (s : Syntax) : Binder :=
   if s.getKind == ``binderVector then .vector s[1].getId s[3].getId
   else .single s[0].getId
 
-/-- A constructor argument ⟶ `Position` (binders + head). -/
+/-- Extract the binders from a `asBinder,+` separated list (skipping the `,` separators). -/
+def parseBinders (s : Syntax) : List Binder :=
+  s.getArgs.toList.filterMap fun b =>
+    if b.getKind == ``binderSingle || b.getKind == ``binderVector then some (parseBinder b) else none
+
+/-- A constructor argument ⟶ `Position` (binders + head). The `bind …` annotation comes either bare
+(`argBind`) or parenthesized (`argBindParen`), which shifts the child indices by one (the leading
+`(`). -/
 partial def parseArg (declared : List Name) (s : Syntax) : IR.Position :=
-  if s.getKind == ``argParen then
-    parseArg declared s[1]
-  else if s.getKind == ``argBind then
-    let binders := s[1].getArgs.toList.filterMap fun b =>
-      if b.getKind == ``binderSingle || b.getKind == ``binderVector then some (parseBinder b) else none
-    { binders := binders, head := parseHead declared s[3] }
+  let k := s.getKind
+  if k == ``argBind then
+    { binders := parseBinders s[1], head := parseHead declared s[3] }
+  else if k == ``argBindParen then
+    { binders := parseBinders s[2], head := parseHead declared s[4] }
   else -- argHead
     { binders := [], head := parseHead declared s[0] }
 
