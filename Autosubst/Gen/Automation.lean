@@ -37,7 +37,10 @@ def genAutomationCommands (sig : Signature) : CommandElabM (Array (TSyntax `comm
   for comp in sig.components do
     for si in substSortsOf sig comp do
       let s := si.name
-      let mut names : Array Ident := #[mkIdent (renRenName s), mkIdent (renSubstName s),
+      -- `subst_s`/`ren_s` themselves (their generated equation lemmas) so `asimp` pushes a
+      -- substitution/renaming through constructors, not only the σ-calculus fusion laws.
+      let mut names : Array Ident := #[mkIdent (substName s), mkIdent (renName s),
+        mkIdent (renRenName s), mkIdent (renSubstName s),
         mkIdent (substRenName s), mkIdent (substSubstName s),
         mkIdent (renRenName' s), mkIdent (renSubstName' s),
         mkIdent (substRenName' s), mkIdent (substSubstName' s),
