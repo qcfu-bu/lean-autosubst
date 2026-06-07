@@ -19,7 +19,7 @@ mode (`Fin.cases` reduces definitionally on `0`/`Fin.succ`). Scope variables are
 identifiers Lean auto-binds (`autoImplicit`).
 -/
 import Lean
-import LeanAutosubst.Gen.Subst
+import Autosubst.Gen.Subst
 
 open Lean Elab Command
 

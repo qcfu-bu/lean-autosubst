@@ -2,7 +2,7 @@
 # Autosubst-consistent notations (the additive notation layer).
 
 Exercises the generated per-sort `Subst*`/`Ren*`/`Var` instances and the scoped notations from
-[LeanAutosubst/Prelude/Notation.lean] — `s[σ]`/`s[σ;τ]` (substitution application), `s⟨ξ⟩`/`s⟨ξ;ζ⟩`
+[Autosubst/Prelude/Notation.lean] — `s[σ]`/`s[σ;τ]` (substitution application), `s⟨ξ⟩`/`s⟨ξ;ζ⟩`
 (renaming application), the function forms `[σ]`/`⟨ξ⟩`, `↑` (shift), and `t..` (single-point
 β-substitution). Asserts: each notation reduces to the raw op by `rfl`, `by asimp` still closes
 notation'd goals, and the proofs are axiom-clean.

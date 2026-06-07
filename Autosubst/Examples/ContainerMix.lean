@@ -6,7 +6,7 @@ handled inline), a `List (tm × tm)` nesting, and a binder into a container. `au
 the mutual structural helpers (none/some for `Option`, nil/cons for `List`, projections for
 `Prod`) and the whole lemma tower; `by asimp` closes the substitution metatheory.
 -/
-import LeanAutosubst
+import Autosubst
 
 open Autosubst
 

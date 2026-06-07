@@ -15,9 +15,9 @@ all `up` → `subst` (per component). Container heads are threaded structurally 
 (see the Containers section below); external heads are carried unchanged.
 -/
 import Lean
-import LeanAutosubst.Gen.Backend
-import LeanAutosubst.Gen.Inductive
-import LeanAutosubst.Gen.Container
+import Autosubst.Gen.Backend
+import Autosubst.Gen.Inductive
+import Autosubst.Gen.Container
 
 open Lean Elab Command
 

@@ -82,3 +82,15 @@ autosubst
     | var_tm : (bind tm in tm) → tm
 
 end XFail.NameHygiene
+
+/-! ## 5. Constructor result sort must match the enclosing sort. -/
+namespace XFail.ResultSort
+open Autosubst
+
+/-- error: Constructor 'bad' of sort 'tm' must end in result sort 'tm', but the final component is 'Nat'. -/
+#guard_msgs in
+autosubst
+  tm where
+    | bad : tm → Nat
+
+end XFail.ResultSort

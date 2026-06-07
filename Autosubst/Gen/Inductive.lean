@@ -17,7 +17,7 @@ We emit *command syntax* and let Lean's own inductive elaborator do the work (`e
 de Bruijn syntax is strictly positive, so this is exactly the clean path.
 -/
 import Lean
-import LeanAutosubst.Gen.Backend
+import Autosubst.Gen.Backend
 
 open Lean Elab Command
 

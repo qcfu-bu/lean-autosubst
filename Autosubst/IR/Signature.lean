@@ -13,7 +13,7 @@ into an analyzed `Signature` by computing, per the exact Autosubst algorithm:
    *reflexively* reachable from `t` — i.e. the maps `ren_t`/`subst_t` must thread;
 4. the **components**: strongly-connected components (mutual blocks), dependency-ordered.
 -/
-import LeanAutosubst.IR.Language
+import Autosubst.IR.Language
 
 open Lean
 

@@ -15,7 +15,7 @@ The reference-signature tests (`Tests/*.lean`) each port a `rocq/.../signatures/
 clean set — the same check `#print axioms foo` reports, but as a hard assertion.
 -/
 import Lean
-import LeanAutosubst
+import Autosubst
 
 open Lean Elab Command
 

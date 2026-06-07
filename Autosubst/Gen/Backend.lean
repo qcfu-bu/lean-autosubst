@@ -20,9 +20,9 @@ for component `v` going from stage `A` to `B` has type `Fin A_v → Fin B_v` (re
 makes their scopes line up (`xi : Fin m_v → Fin k_v`, `zeta : Fin k_v → Fin l_v`).
 -/
 import Lean
-import LeanAutosubst.Prelude.Unscoped
-import LeanAutosubst.Prelude.Scoped
-import LeanAutosubst.IR.Signature
+import Autosubst.Prelude.Unscoped
+import Autosubst.Prelude.Scoped
+import Autosubst.IR.Signature
 
 open Lean Elab Command
 

@@ -16,8 +16,8 @@ disambiguate by elaboration). A user opts in with `open Autosubst.Notation` (uns
 
 Reference: rocq/autosubst2-ocaml/share/coq-autosubst-ocaml/unscoped.v
 -/
-import LeanAutosubst.Prelude.Unscoped
-import LeanAutosubst.Prelude.Scoped
+import Autosubst.Prelude.Unscoped
+import Autosubst.Prelude.Scoped
 
 namespace Autosubst
 

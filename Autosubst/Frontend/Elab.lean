@@ -7,14 +7,14 @@ The `autosubst` command elaborator. It walks the captured `Syntax` (never elabor
 this elaborator to also emit the de Bruijn inductives, substitution operations, lemma tower,
 and tactics.
 -/
-import LeanAutosubst.Frontend.Syntax
-import LeanAutosubst.IR.Signature
-import LeanAutosubst.Gen.Inductive
-import LeanAutosubst.Gen.Subst
-import LeanAutosubst.Gen.Lemmas
-import LeanAutosubst.Gen.Automation
-import LeanAutosubst.Gen.Notation
-import LeanAutosubst.Tactic.Asimp
+import Autosubst.Frontend.Syntax
+import Autosubst.IR.Signature
+import Autosubst.Gen.Inductive
+import Autosubst.Gen.Subst
+import Autosubst.Gen.Lemmas
+import Autosubst.Gen.Automation
+import Autosubst.Gen.Notation
+import Autosubst.Tactic.Asimp
 
 open Lean Elab Command
 
@@ -128,24 +128,42 @@ partial def parseArg (declared : List Name) (s : Syntax) : IR.Position :=
 /-- A constructor declaration ⟶ `Constructor`. Children: `1`=name, `2`=`(p : nat)` params,
 `4`=first arg, `5`=the `→`-chain. The chain's last element is the result sort (dropped); the rest
 are argument positions. -/
-def parseCtor (declared : List Name) (s : Syntax) : IR.Constructor :=
+def parseCtor (declared : List Name) (sort : SortId) (s : Syntax) : CommandElabM IR.Constructor := do
   let params := s[2].getArgs.toList.map (fun p => (p[1].getId, p[3].getId))
   let rest := s[5].getArgs.toList.map (·[1])   -- each `group` is `(" → " asArg)`; the arg is child 1
-  let positions := (s[4] :: rest).dropLast.map (parseArg declared)
-  { name := s[1].getId, params := params, positions := positions }
+  let args := s[4] :: rest
+  let result := args.reverse.head!
+  let resultPos := parseArg declared result
+  let ctorName := s[1].getId
+  let badResult : CommandElabM Unit :=
+    throwErrorAt result
+      m!"Constructor '{ctorName}' of sort '{sort}' must end in result sort '{sort}', \
+        but the final component is '{result}'."
+  unless resultPos.binders.isEmpty do
+    badResult
+  match resultPos.head with
+  | .sort resultSort _ =>
+      unless resultSort.eraseMacroScopes == sort.eraseMacroScopes do
+        badResult
+  | _ => badResult
+  let positions := args.dropLast.map (parseArg declared)
+  return { name := ctorName, params := params, positions := positions }
 
 /-- A sort declaration ⟶ `SortDecl`. -/
-def parseSortDecl (declared : List Name) (s : Syntax) : SortDecl :=
-  { name := s[0].getId
-  , params := enumerate s[1].getArgs.toList |>.map (fun (idx, p) => parseParam idx p)
-  , ctors := s[3].getArgs.toList.map (parseCtor declared) }
+def parseSortDecl (declared : List Name) (s : Syntax) : CommandElabM SortDecl := do
+  let sort := s[0].getId
+  let ctors ← s[3].getArgs.toList.mapM (parseCtor declared sort)
+  return { name := sort
+         , params := enumerate s[1].getArgs.toList |>.map (fun (idx, p) => parseParam idx p)
+         , ctors := ctors }
 
 /-- The whole `autosubst` block ⟶ `Spec` (sorts in declaration order). The sort declarations are
 at child `2` (child `1` is the optional `wellscoped` modifier). -/
-def parseSpec (stx : Syntax) : Spec :=
+def parseSpec (stx : Syntax) : CommandElabM Spec := do
   let sortDecls := stx[2].getArgs.toList
   let declared := sortDecls.map (·[0].getId)
-  { sorts := sortDecls.map (parseSortDecl declared) }
+  let sorts ← sortDecls.mapM (parseSortDecl declared)
+  return { sorts := sorts }
 
 partial def headIdents : ArgHead → List Name
   | .sort _ args => args.flatMap headIdents
@@ -223,7 +241,7 @@ def bestEffortElab (cmd : TSyntax `command) : CommandElabM Unit := do
 def elabAutosubst : CommandElab := fun stx => do
   -- `wellscoped` modifier (child 1) ⟹ the `Fin`-indexed backend (plan.md §8).
   let isScoped := !stx[1].isNone
-  let spec ← addSectionParams (parseSpec stx)
+  let spec ← addSectionParams (← parseSpec stx)
   -- Recognise container heads **on demand**: which `(F …)` heads in this signature are functors we
   -- can thread substitution through (`Prod`, or a regular polynomial functor in its type parameters
   -- like `List`/a user `Tree`/a bifunctor). No registry, no required `deriving` — just the inductive declarations themselves.

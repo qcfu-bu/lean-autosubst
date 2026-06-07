@@ -18,9 +18,9 @@ The set is assembled from:
 to `substify`/`renamify`, keeping `asimp` from collapsing renamings into substitutions.
 -/
 import Lean
-import LeanAutosubst.Prelude.Unscoped
-import LeanAutosubst.Prelude.Scoped
-import LeanAutosubst.Tactic.Attr
+import Autosubst.Prelude.Unscoped
+import Autosubst.Prelude.Scoped
+import Autosubst.Tactic.Attr
 
 open Lean
 

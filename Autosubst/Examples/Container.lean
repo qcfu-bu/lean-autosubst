@@ -24,7 +24,7 @@ list-specific. Every name matches the Autosubst-2 generated output; `*_list` hel
 Lean-specific glue. (The generator reproduces this tower for any registered container — see
 `Gen/Container.lean`.)
 -/
-import LeanAutosubst.Prelude.Unscoped
+import Autosubst.Prelude.Unscoped
 
 namespace Autosubst.Container
 open Autosubst

@@ -29,7 +29,7 @@ Note `ty` does not mention `tm`, so the two sorts are *hierarchical*, not mutual
 The `tm` composition lemmas carry hypotheses for BOTH components — they are the genuine
 parallel-substitution statements, not weakened to a single map.
 -/
-import LeanAutosubst.Prelude.Unscoped
+import Autosubst.Prelude.Unscoped
 
 namespace Autosubst.SysF
 open Autosubst

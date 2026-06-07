@@ -6,9 +6,9 @@ Emits `attribute [asimp] …` commands that tag each signature's generated clean
 list + `unfold`s (see [Tactic/Asimp.lean]).
 -/
 import Lean
-import LeanAutosubst.Gen.Lemmas
+import Autosubst.Gen.Lemmas
 -- imported so the `renamify_lemmas` attribute's parser is available for the `[… ←]` quotation below
-import LeanAutosubst.Tactic.Attr
+import Autosubst.Tactic.Attr
 
 open Lean Elab Command
 

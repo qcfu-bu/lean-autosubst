@@ -17,9 +17,9 @@ would not fire on a notation'd goal. So, mirroring the reference `asimpl`'s `unf
 ids …`, we also emit per-sort **`rfl` bridge lemmas** (`Subst1.subst1 σ s = subst_s σ s`, …) tagged
 into the `asimp` set, which normalize the notation away before the tower lemmas rewrite.
 -/
-import LeanAutosubst.Gen.Subst
-import LeanAutosubst.Prelude.Notation
-import LeanAutosubst.Tactic.Attr
+import Autosubst.Gen.Subst
+import Autosubst.Prelude.Notation
+import Autosubst.Tactic.Attr
 
 open Lean Elab Command
 

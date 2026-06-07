@@ -22,7 +22,7 @@ Autosubst-2 scoped output exactly — this is the generator's scoped contract.
 
 Done = typechecks; no `sorry`; axioms = `{propext, Quot.sound}` only.
 -/
-import LeanAutosubst.Prelude.Scoped
+import Autosubst.Prelude.Scoped
 
 namespace Autosubst.StlcScoped
 open Autosubst Autosubst.Scoped

@@ -6,7 +6,7 @@ whose `seq`/`lam` constructors carry a `List tm` (a container, with `lam` bindin
 `autosubst` generates the mutual `ren`/`subst` + `*_list` helpers and the whole lemma tower;
 substitution metatheory is proved by `by asimp`.
 -/
-import LeanAutosubst
+import Autosubst
 
 open Autosubst
 

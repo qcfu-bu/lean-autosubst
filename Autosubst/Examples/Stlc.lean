@@ -24,7 +24,7 @@ forms as the inductive stepping stones, per plan.md §1.
 Hand-proving this first validates the substitution mathematics in Lean
 independently of any metaprogramming.
 -/
-import LeanAutosubst.Prelude.Unscoped
+import Autosubst.Prelude.Unscoped
 
 namespace Autosubst.Stlc
 open Autosubst

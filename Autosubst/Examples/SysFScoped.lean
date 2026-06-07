@@ -20,7 +20,7 @@ Variable backend: Lean's core `Fin n` (`Autosubst.Scoped`). The `Nat` `0`/`n+1` 
 becomes `Fin.cases` (which reduces definitionally on `0`/`Fin.succ i`). Done = typechecks; no
 `sorry`; axioms ⊆ `{propext, Quot.sound}`.
 -/
-import LeanAutosubst.Prelude.Scoped
+import Autosubst.Prelude.Scoped
 
 namespace Autosubst.SysFScoped
 open Autosubst Autosubst.Scoped

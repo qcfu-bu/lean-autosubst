@@ -5,7 +5,7 @@ The multi-sort scoped counterpart of [SysfDsl.lean](SysfDsl.lean): `tm` carries 
 `tm`-variables, so it is doubly scope-indexed (`tm : Nat → Nat → Type`) and `ren`/`subst` thread
 two `Fin`-maps in parallel — matching [SysFScoped.lean](SysFScoped.lean).
 -/
-import LeanAutosubst
+import Autosubst
 
 open Autosubst Autosubst.Scoped
 

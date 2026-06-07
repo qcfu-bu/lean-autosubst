@@ -5,7 +5,7 @@ The multi-sorted counterpart of `StlcDsl.lean`: two substitution sorts (`ty`, `t
 carries **both** type- and term-variables, so `subst_tm` threads two maps in parallel. Generated
 from the HOAS spec by `autosubst`; metatheory proved by `by asimp`.
 -/
-import LeanAutosubst
+import Autosubst
 
 open Autosubst Autosubst.Notation
 

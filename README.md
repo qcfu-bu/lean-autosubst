@@ -22,7 +22,7 @@ that does not typecheck is a generator bug surfaced immediately). No Mathlib dep
 - **Axiom-clean** — the entire generated tower uses only `propext` and `Quot.sound`.
 
 ```lean
-import LeanAutosubst
+import Autosubst
 open Autosubst Autosubst.Notation
 
 autosubst
@@ -56,7 +56,7 @@ require «lean-autosubst» from git
   "https://github.com/qcfu-bu/lean-autosubst.git" @ "main"
 ```
 
-then `import LeanAutosubst`. Your project's `lean-toolchain` must match the one pinned here
+then `import Autosubst`. Your project's `lean-toolchain` must match the one pinned here
 ([`leanprover/lean4:v4.30.0`](lean-toolchain)).
 
 ## The DSL
@@ -134,7 +134,7 @@ A constructor argument that binds variables wraps its head type in a `bind … i
 
 `bind a, b in h` binds several variables **at once** in the same position — substitution lifts once
 per binder (`up ∘ up …`); in well-scoped mode the body's scope jumps accordingly (`tm (n+1+1)`). See
-[LeanAutosubst/Examples/PairBindDsl.lean](LeanAutosubst/Examples/PairBindDsl.lean).
+[Autosubst/Examples/PairBindDsl.lean](Autosubst/Examples/PairBindDsl.lean).
 
 ### Container heads `F a` and external types
 
@@ -230,7 +230,7 @@ kinds of variable `s` contains), `autosubst` emits, with these exact names:
 
 These match the upstream Autosubst names; the non-primed `instId`/`compComp…`/`rinstInst` forms are
 exactly what `asimp` rewrites with. Hand-written golden references live in
-[LeanAutosubst/Examples/](LeanAutosubst/Examples/) (`Stlc`, `SysF`, `StlcScoped`, `SysFScoped`,
+[Autosubst/Examples/](Autosubst/Examples/) (`Stlc`, `SysF`, `StlcScoped`, `SysFScoped`,
 `Container`).
 
 ## Tactics
@@ -239,7 +239,7 @@ exactly what `asimp` rewrites with. Hand-written golden references live in
   normal form). Closes the standard goals: substitution identity, `ren id = id`, the four fusions,
   β-cancellation (`(ren shift s)[t..] = s`), and the substitution lemma. Variants `asimp at h` and
   `asimp at *` come for free. Implemented as `simp only [asimp_lemmas]` over the generated clean
-  lemmas plus the static σ-laws ([LeanAutosubst/Tactic/Asimp.lean](LeanAutosubst/Tactic/Asimp.lean)).
+  lemmas plus the static σ-laws ([Autosubst/Tactic/Asimp.lean](Autosubst/Tactic/Asimp.lean)).
 * **`substify`** — rewrite renamings into substitutions (`ren_s ξ ↦ subst_s (var ∘ ξ)`) and then
   `asimp`. Variants `substify at h` / `at *`.
 * **`renamify`** — the inverse of `substify`: rewrite `subst_s (var ∘ ξ) ↦ ren_s ξ` (the same
@@ -260,7 +260,7 @@ underlying simp sets, should you want to add your own lemmas.
 ## Notations
 
 A purely additive, opt-in readability layer mirroring upstream Autosubst's notation set
-([LeanAutosubst/Prelude/Notation.lean](LeanAutosubst/Prelude/Notation.lean)). Open
+([Autosubst/Prelude/Notation.lean](Autosubst/Prelude/Notation.lean)). Open
 `Autosubst.Notation` (unscoped) or `Autosubst.Scoped.Notation` (well-scoped) to bring them into
 scope:
 
@@ -309,9 +309,9 @@ The notations live in **scoped namespaces** (Autosubst's `subst_scope`/`fscope`)
 disambiguate by elaboration rather than clashing. In the **well-scoped** backend a *polymorphic*
 constant map (`↑`, `var_s` — its scope is a metavar at the use site) needs a one-off type
 ascription, e.g. `(↑ : Fin n → Fin (n+1))`; concrete map variables never do, and the unscoped
-backend never needs one. See [LeanAutosubst/Examples/StlcDsl.lean](LeanAutosubst/Examples/StlcDsl.lean)
-(unscoped), [SysfDsl.lean](LeanAutosubst/Examples/SysfDsl.lean) (two-map), and
-[StlcScopedDsl.lean](LeanAutosubst/Examples/StlcScopedDsl.lean) (scoped).
+backend never needs one. See [Autosubst/Examples/StlcDsl.lean](Autosubst/Examples/StlcDsl.lean)
+(unscoped), [SysfDsl.lean](Autosubst/Examples/SysfDsl.lean) (two-map), and
+[StlcScopedDsl.lean](Autosubst/Examples/StlcScopedDsl.lean) (scoped).
 
 ## Capability matrix
 
@@ -343,7 +343,7 @@ limitation. Unscoped containers work fully.
 (bind ⟨p, tm⟩ in tm) → tm` ⟶ `lam : (p : Nat) → tm (n + p) → tm n`) is supported in the
 **well-scoped** backend for **single-substitution-sort** signatures
 ([tests/Tests/Variadic.lean](tests/Tests/Variadic.lean)), via `scons_p`/`shift_p`/`zero_p`/`upRen_p`
-([LeanAutosubst/Prelude/Scoped.lean](LeanAutosubst/Prelude/Scoped.lean), index order `Fin (n + p)`).
+([Autosubst/Prelude/Scoped.lean](Autosubst/Prelude/Scoped.lean), index order `Fin (n + p)`).
 The **unscoped** variadic form and the **multi-open-sort** scoped form are unported (explicit error).
 The fixed-arity `bind a, b` multi-binder *is* supported in both backends.
 
