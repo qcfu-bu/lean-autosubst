@@ -67,13 +67,13 @@ open Lean
 -- `s[σ]` (no space) is substitution. (Without `noWs`, `s:max "["` greedily captures a following
 -- `[…]`, so `[] []` failed to parse.)
 /-- `s[σ]` — substitution application (one map). -/
-scoped syntax:max (name := substApp1) term:max noWs "[" term "]" : term
+scoped syntax:max (name := substApp1) (priority := high) term:max noWs "[" term "]" : term
 /-- `s[σ;τ]` — parallel substitution application (two maps, for multi-sort vectors). -/
-scoped syntax:max (name := substApp2) term:max noWs "[" term ";" term "]" : term
+scoped syntax:max (name := substApp2) (priority := high) term:max noWs "[" term ";" term "]" : term
 /-- `s⟨ξ⟩` — renaming application (one map). -/
-scoped syntax:max (name := renApp1) term:max noWs "⟨" term "⟩" : term
+scoped syntax:max (name := renApp1) (priority := high) term:max noWs "⟨" term "⟩" : term
 /-- `s⟨ξ;ζ⟩` — parallel renaming application (two maps). -/
-scoped syntax:max (name := renApp2) term:max noWs "⟨" term ";" term "⟩" : term
+scoped syntax:max (name := renApp2) (priority := high) term:max noWs "⟨" term ";" term "⟩" : term
 /-- `[σ]` — substitution as a function (`fscope` form). -/
 scoped notation:max "[" σ "]" => Autosubst.Subst1.subst1 σ
 /-- `⟨ξ⟩` — renaming as a function (`fscope` form). -/
@@ -90,7 +90,7 @@ identity tail, the `/` marking it a substitution. `[a/]` is the basic single-var
 `a .: ids` (= `a..`). (`/]` is one token, so the term before it is never read as a division.) -/
 scoped syntax:max (name := substFin) "[" term,+ "/]" : term
 /-- `s[a, b, c/]` — apply that explicit substitution to `s` (so `s[t/]` is the β-substitution). -/
-scoped syntax:max (name := substAppFin) term:max noWs "[" term,+ "/]" : term
+scoped syntax:max (name := substAppFin) (priority := high) term:max noWs "[" term,+ "/]" : term
 open Autosubst in
 macro_rules (kind := substApp1) | `($s[$σ]) => `(Autosubst.Subst1.subst1 $σ $s)
 open Autosubst in
@@ -123,10 +123,10 @@ open Lean
 
 -- Applied forms use `noWs` (see the unscoped namespace above) so `f [x]` / `f ⟨c⟩` with a space
 -- stay application, while `s[σ]` / `s⟨ξ⟩` (no space) are substitution / renaming.
-scoped syntax:max (name := substApp1) term:max noWs "[" term "]" : term
-scoped syntax:max (name := substApp2) term:max noWs "[" term ";" term "]" : term
-scoped syntax:max (name := renApp1) term:max noWs "⟨" term "⟩" : term
-scoped syntax:max (name := renApp2) term:max noWs "⟨" term ";" term "⟩" : term
+scoped syntax:max (name := substApp1) (priority := high) term:max noWs "[" term "]" : term
+scoped syntax:max (name := substApp2) (priority := high) term:max noWs "[" term ";" term "]" : term
+scoped syntax:max (name := renApp1) (priority := high) term:max noWs "⟨" term "⟩" : term
+scoped syntax:max (name := renApp2) (priority := high) term:max noWs "⟨" term ";" term "⟩" : term
 scoped notation:max "[" σ "]" => Subst1.subst1 σ
 scoped notation:max "⟨" ξ "⟩" => Ren1.ren1 ξ
 scoped notation:max t:max ".." => Autosubst.Scoped.scons t Var.ids
@@ -136,7 +136,7 @@ scoped notation:max "⇑" σ:max => Autosubst.Up.up σ
 /-- `[a, b, c/]` — the explicit finite (well-scoped) substitution `a .: b .: c .: ids`. -/
 scoped syntax:max (name := substFin) "[" term,+ "/]" : term
 /-- `s[a, b, c/]` — apply that explicit substitution to `s`. -/
-scoped syntax:max (name := substAppFin) term:max noWs "[" term,+ "/]" : term
+scoped syntax:max (name := substAppFin) (priority := high) term:max noWs "[" term,+ "/]" : term
 macro_rules (kind := substApp1) | `($s[$σ]) => `(Subst1.subst1 $σ $s)
 macro_rules (kind := substApp2) | `($s[$σ ; $τ]) => `(Subst2.subst2 $σ $τ $s)
 macro_rules (kind := renApp1) | `($s⟨$ξ⟩) => `(Ren1.ren1 $ξ $s)
