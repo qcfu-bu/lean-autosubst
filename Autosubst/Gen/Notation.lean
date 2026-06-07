@@ -41,10 +41,11 @@ def genNotationCommands (sc : Bool) (sig : Signature) : CommandElabM (Array (TSy
   let ren1P   := mkIdent ``Autosubst.Ren1.ren1
   let ren2P   := mkIdent ``Autosubst.Ren2.ren2
   let idsP    := mkIdent ``Autosubst.Var.ids
+  -- Bind the signature's sort parameters (e.g. `{Srt : Type}`) on every emitted instance/bridge,
+  -- so parameterized sorts get the same notation-dispatch layer as non-parameterized ones.
+  let pbs ← sigImplicitBinders sig
   for comp in sig.components do
     for si in substSortsOf sig comp do
-      unless si.params.isEmpty do
-        continue
       let s := si.name
       let vec := si.substVec
       -- subject `s<m>` / result `s<n>`, and one map per vector component (stage m ⟶ n).
@@ -68,36 +69,38 @@ def genNotationCommands (sc : Bool) (sig : Signature) : CommandElabM (Array (TSy
       -- simp rewrites subterms) the applied forms `s[σ]`/`s⟨ξ⟩` as well.
       match vec, substMaps, renMaps with
       | [_], [sm], [rm] =>
-        out := out.push (← `(command| instance $iSubst1:ident : $subst1I $dom $sm $cod := ⟨$substId⟩))
-        out := out.push (← `(command| instance $iRen1:ident : $ren1I $dom $rm $cod := ⟨$renId⟩))
+        out := out.push (← `(command| instance $iSubst1:ident $pbs* : $subst1I $dom $sm $cod := ⟨$substId⟩))
+        out := out.push (← `(command| instance $iRen1:ident $pbs* : $ren1I $dom $rm $cod := ⟨$renId⟩))
         out := out.push (← `(command|
-          @[asimp_lemmas] theorem $(bSubst1) (σ : $sm) : $subst1P σ = $substId σ := rfl))
+          @[asimp_lemmas] theorem $(bSubst1) $pbs* (σ : $sm) : $subst1P σ = $substId σ := rfl))
+        -- renaming maps (`Nat → Nat`) carry no sort, so for parameterized sorts the unapplied
+        -- `ren1 ξ` form cannot infer the sort — ascribe the bridge to `$dom → $cod` to pin it.
         out := out.push (← `(command|
-          @[asimp_lemmas] theorem $(bRen1) (ξ : $rm) : $ren1P ξ = $renId ξ := rfl))
+          @[asimp_lemmas] theorem $(bRen1) $pbs* (ξ : $rm) :
+            ($ren1P ξ : $dom → $cod) = ($renId ξ : $dom → $cod) := rfl))
       | [_, _], [sm1, sm2], [rm1, rm2] =>
-        out := out.push (← `(command| instance $iSubst2:ident : $subst2I $dom $sm1 $sm2 $cod := ⟨$substId⟩))
-        out := out.push (← `(command| instance $iRen2:ident : $ren2I $dom $rm1 $rm2 $cod := ⟨$renId⟩))
+        out := out.push (← `(command| instance $iSubst2:ident $pbs* : $subst2I $dom $sm1 $sm2 $cod := ⟨$substId⟩))
+        out := out.push (← `(command| instance $iRen2:ident $pbs* : $ren2I $dom $rm1 $rm2 $cod := ⟨$renId⟩))
         out := out.push (← `(command|
-          @[asimp_lemmas] theorem $(bSubst2) (σ : $sm1) (τ : $sm2) : $subst2P σ τ = $substId σ τ := rfl))
+          @[asimp_lemmas] theorem $(bSubst2) $pbs* (σ : $sm1) (τ : $sm2) : $subst2P σ τ = $substId σ τ := rfl))
         out := out.push (← `(command|
-          @[asimp_lemmas] theorem $(bRen2) (ξ : $rm1) (ζ : $rm2) : $ren2P ξ ζ = $renId ξ ζ := rfl))
+          @[asimp_lemmas] theorem $(bRen2) $pbs* (ξ : $rm1) (ζ : $rm2) :
+            ($ren2P ξ ζ : $dom → $cod) = ($renId ξ ζ : $dom → $cod) := rfl))
       | _, _, _ => pure ()
       -- `Var` (for `t..`): the variable injection, index type ⟶ the sort, + its unfold bridge.
       if si.isOpen then
         let varCtor := mkIdent (s ++ varName s)
         let idxTy ← if sc then `(Fin $(scopeVar "m" s)) else `(Nat)
         let bVar := mkIdent (Name.mkSimple s!"varIds_{s}")
-        out := out.push (← `(command| instance $iVar:ident : $varCls $dom $idxTy := ⟨$varCtor⟩))
+        out := out.push (← `(command| instance $iVar:ident $pbs* : $varCls $dom $idxTy := ⟨$varCtor⟩))
         out := out.push (← `(command|
-          @[asimp_lemmas] theorem $(bVar) : ($idsP : $idxTy → $dom) = $varCtor := rfl))
+          @[asimp_lemmas] theorem $(bVar) $pbs* : ($idsP : $idxTy → $dom) = $varCtor := rfl))
   -- `⇑` (the binder lift) is dispatched only when **a single open sort** makes the binder sort `b`
   -- and component sort `v` both forced (b = v = the lone open sort `s`, lift `up_s_s`). With ≥2 open
   -- sorts the same map type is lifted by several binder sorts (no unique `⇑`), so it is omitted and
   -- the explicit `up_b_v` names stand.
   match openSorts sig with
   | [s] =>
-    if !(sigParams sig).isEmpty then
-      return out
     let upI    := mkIdent ``Autosubst.Up
     let upP    := mkIdent ``Autosubst.Up.up
     let upId   := mkIdent (upName s s)
@@ -107,9 +110,9 @@ def genNotationCommands (sc : Bool) (sig : Signature) : CommandElabM (Array (TSy
     let dom ← mapTy sc sig false s "m" "n"
     let cod ← if sc then `(Fin ($(scopeVar "m" s) + 1) → $(← sortTyAt false sig s "n") ($(scopeVar "n" s) + 1))
               else `(Nat → $(← sortTyAt false sig s "n"))
-    out := out.push (← `(command| instance $iUp:ident : $upI $dom $cod := ⟨$upId⟩))
+    out := out.push (← `(command| instance $iUp:ident $pbs* : $upI $dom $cod := ⟨$upId⟩))
     out := out.push (← `(command|
-      @[asimp_lemmas] theorem $(bUp) : ($upP : $dom → $cod) = $upId := rfl))
+      @[asimp_lemmas] theorem $(bUp) $pbs* : ($upP : $dom → $cod) = $upId := rfl))
   | _ => pure ()
   return out
 
