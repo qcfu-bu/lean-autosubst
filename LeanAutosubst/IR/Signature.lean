@@ -85,8 +85,8 @@ def analyze (sp : Spec) (sc : Bool := false) (containers : List Name := supporte
     Except String Signature := do
   let succ := directArgs sp
   let canonical := sp.sortNames
-  let paramSig (ps : List Param) : List (Name × Syntax × Bool) :=
-    ps.map fun p => (p.name, p.type, p.implicit)
+  let paramSig (ps : List Param) : List (Name × Syntax × ParamKind) :=
+    ps.map fun p => (p.name, p.type, p.kind)
   match sp.sorts with
   | [] => pure ()
   | sd0 :: rest =>

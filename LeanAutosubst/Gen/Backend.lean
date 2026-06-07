@@ -54,16 +54,26 @@ def sigParams (sig : Signature) : List Param :=
 /-- Reconstruct the user-facing binder for an inductive parameter. -/
 def paramBinder (p : Param) : CommandElabM (TSyntax ``Lean.Parser.Term.bracketedBinder) := do
   let ty : Term := ⟨p.type⟩
-  if p.implicit then
-    `(Lean.Parser.Term.bracketedBinderF| { $(mkIdent p.name) : $ty })
-  else
-    `(Lean.Parser.Term.bracketedBinderF| ($(mkIdent p.name) : $ty))
+  match p.kind with
+  | .explicit =>
+      `(Lean.Parser.Term.bracketedBinderF| ($(mkIdent p.name) : $ty))
+  | .implicit =>
+      `(Lean.Parser.Term.bracketedBinderF| { $(mkIdent p.name) : $ty })
+  | .strictImplicit =>
+      `(Lean.Parser.Term.bracketedBinderF| ⦃ $(mkIdent p.name) : $ty ⦄)
+  | .instImplicit =>
+      `(Lean.Parser.Term.bracketedBinderF| [$(mkIdent p.name) : $ty])
 
-/-- Generated operations and lemmas rebind all sort parameters implicitly, even when the inductive
-parameter was explicit, so users do not have to write `subst_Tm Ann σ t`. -/
+/-- Generated operations and lemmas rebind ordinary sort parameters implicitly, even when the
+inductive parameter was explicit, so users do not have to write `subst_Tm Ann σ t`. Instance
+parameters remain instance implicit so typeclass search continues to apply. -/
 def paramImplicitBinder (p : Param) : CommandElabM (TSyntax ``Lean.Parser.Term.bracketedBinder) := do
   let ty : Term := ⟨p.type⟩
-  `(Lean.Parser.Term.bracketedBinderF| { $(mkIdent p.name) : $ty })
+  match p.kind with
+  | .instImplicit =>
+      `(Lean.Parser.Term.bracketedBinderF| [$(mkIdent p.name) : $ty])
+  | _ =>
+      `(Lean.Parser.Term.bracketedBinderF| { $(mkIdent p.name) : $ty })
 
 def sigImplicitBinders (sig : Signature) :
     CommandElabM (Array (TSyntax ``Lean.Parser.Term.bracketedBinder)) :=

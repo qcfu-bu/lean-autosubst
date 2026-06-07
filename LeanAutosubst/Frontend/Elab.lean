@@ -21,6 +21,17 @@ open Lean Elab Command
 namespace Autosubst.Frontend
 open Autosubst.IR
 
+partial def eraseIdentMacroScopes (stx : Syntax) : Syntax :=
+  stx.rewriteBottomUp fun
+    | Syntax.ident info rawVal val _ => Syntax.ident info rawVal val.eraseMacroScopes []
+    | stx => stx
+
+partial def syntaxIdents (stx : Syntax) : List Name :=
+  if stx.isIdent then
+    [stx.getId.eraseMacroScopes]
+  else
+    stx.getArgs.toList.flatMap syntaxIdents
+
 /-- A head (`asHead`) or functor argument (`asHeadArg`) ⟶ `ArgHead`. An ident is a declared sort
 (`.sort`) if known, else an external type (`.ext`); `F a b …` is a functor application; a
 parenthesized head is unwrapped. -/
@@ -39,12 +50,58 @@ partial def parseHead (declared : List Name) (s : Syntax) : ArgHead :=
     let id := s[0].getId
     if declared.contains id then .sort id [] else .ext id
 
+/-- Deterministic local names for anonymous instance parameters (`[C α]`). They must be nameable
+because generated code applies parameterized sorts explicitly via `@Sort ...`. -/
+def anonInstName (idx : Nat) : Name := Name.mkSimple s!"instParam{idx}"
+
+def enumerateFrom {α : Type} (idx : Nat) : List α → List (Nat × α)
+  | [] => []
+  | x :: xs => (idx, x) :: enumerateFrom (idx + 1) xs
+
+def enumerate {α : Type} : List α → List (Nat × α) :=
+  enumerateFrom 0
+
 /-- A sort parameter declaration ⟶ `Param`. -/
-def parseParam (s : Syntax) : Param :=
-  if s.getKind == ``sortParamImplicit then
-    { name := s[1].getId, type := s[3], implicit := true }
+def parseParam (idx : Nat) (s : Syntax) : Param :=
+  let k := s.getKind
+  if k == ``sortParamImplicit then
+    { name := s[1].getId.eraseMacroScopes, type := s[3], kind := .implicit }
+  else if k == ``sortParamStrictImplicit then
+    { name := s[1].getId.eraseMacroScopes, type := s[3], kind := .strictImplicit }
+  else if k == ``sortParamInstNamed then
+    { name := s[1].getId.eraseMacroScopes, type := s[3], kind := .instImplicit }
+  else if k == ``sortParamInstAnon then
+    { name := anonInstName idx, type := s[1], kind := .instImplicit }
   else
-    { name := s[1].getId, type := s[3], implicit := false }
+    { name := s[1].getId.eraseMacroScopes, type := s[3], kind := .explicit }
+
+open Lean.Parser.Term in
+/-- Active section variables that can be promoted to sort parameters. -/
+def parseSectionVarParamDecl (idx : Nat) (s : Syntax) : CommandElabM (List Param) := do
+  let mkParams (ids : Array (TSyntax [`ident, `Lean.Parser.Term.hole])) (ty : Syntax)
+      (kind : ParamKind) : List Param :=
+    ids.toList.filterMap fun id =>
+      if id.raw.isIdent then
+        some { name := id.raw.getId.eraseMacroScopes, type := ty, kind := kind }
+      else
+        none
+  match s with
+  | `(bracketedBinderF|($ids* : $ty)) =>
+      let ty := eraseIdentMacroScopes ty
+      return mkParams ids ty .explicit
+  | `(bracketedBinderF|{$ids* : $ty}) =>
+      let ty := eraseIdentMacroScopes ty
+      return mkParams ids ty .implicit
+  | `(bracketedBinderF|⦃$ids* : $ty⦄) =>
+      let ty := eraseIdentMacroScopes ty
+      return mkParams ids ty .strictImplicit
+  | `(bracketedBinderF|[$id : $ty]) =>
+      let ty := eraseIdentMacroScopes ty
+      return [{ name := id.getId.eraseMacroScopes, type := ty, kind := .instImplicit }]
+  | `(bracketedBinderF|[$ty]) =>
+      let ty := eraseIdentMacroScopes ty
+      return [{ name := anonInstName idx, type := ty, kind := .instImplicit }]
+  | _ => return []
 
 /-- A binder annotation element ⟶ `Binder`. -/
 def parseBinder (s : Syntax) : Binder :=
@@ -80,7 +137,7 @@ def parseCtor (declared : List Name) (s : Syntax) : IR.Constructor :=
 /-- A sort declaration ⟶ `SortDecl`. -/
 def parseSortDecl (declared : List Name) (s : Syntax) : SortDecl :=
   { name := s[0].getId
-  , params := s[1].getArgs.toList.map parseParam
+  , params := enumerate s[1].getArgs.toList |>.map (fun (idx, p) => parseParam idx p)
   , ctors := s[3].getArgs.toList.map (parseCtor declared) }
 
 /-- The whole `autosubst` block ⟶ `Spec` (sorts in declaration order). The sort declarations are
@@ -89,6 +146,59 @@ def parseSpec (stx : Syntax) : Spec :=
   let sortDecls := stx[2].getArgs.toList
   let declared := sortDecls.map (·[0].getId)
   { sorts := sortDecls.map (parseSortDecl declared) }
+
+partial def headIdents : ArgHead → List Name
+  | .sort _ args => args.flatMap headIdents
+  | .functor f args => f.eraseMacroScopes :: args.flatMap headIdents
+  | .ext e => [e.eraseMacroScopes]
+  | .opaque stx => syntaxIdents stx
+
+def specMentionedIdents (sp : Spec) : List Name :=
+  Id.run do
+    let mut out : List Name := []
+    for sd in sp.sorts do
+      for p in sd.params do
+        out := out ++ syntaxIdents p.type
+      for c in sd.ctors do
+        for (_, ty) in c.params do
+          out := out ++ [ty.eraseMacroScopes]
+        for pos in c.positions do
+          out := out ++ headIdents pos.head
+    out.eraseDups
+
+def closeSectionParamNames (available : List Param) (initial : List Name) : List Name := Id.run do
+  let availableNames := available.map (·.name.eraseMacroScopes)
+  let mut selected := initial.map (·.eraseMacroScopes) |>.filter availableNames.contains |>.eraseDups
+  let mut changed := true
+  while changed do
+    changed := false
+    for p in available do
+      let deps := syntaxIdents p.type |>.map (·.eraseMacroScopes)
+      if selected.contains p.name then
+        for n in deps do
+          if availableNames.contains n && !selected.contains n then
+            selected := selected ++ [n]
+            changed := true
+      else if p.kind == .instImplicit && deps.any selected.contains then
+        selected := selected ++ [p.name]
+        changed := true
+  selected
+
+def addSectionParams (sp : Spec) : CommandElabM Spec := do
+  let scope ← getScope
+  let available ← enumerate scope.varDecls.toList |>.flatMapM fun (idx, stx) =>
+    parseSectionVarParamDecl idx stx.raw
+  if available.isEmpty then
+    return sp
+  let selected := closeSectionParamNames available (specMentionedIdents sp)
+  let autoParams := available.filter (fun p => selected.contains p.name)
+  if autoParams.isEmpty then
+    return sp
+  let addToSort (sd : SortDecl) : SortDecl :=
+    let existing := sd.params.map (fun p => p.name.eraseMacroScopes)
+    let extra := autoParams.filter (fun p => !existing.contains p.name)
+    { sd with params := extra ++ sd.params }
+  return { sorts := sp.sorts.map addToSort }
 
 /-- Render an analyzed signature compactly (one line per sort + the components). -/
 def Signature.summary (sig : Signature) : MessageData :=
@@ -113,7 +223,7 @@ def bestEffortElab (cmd : TSyntax `command) : CommandElabM Unit := do
 def elabAutosubst : CommandElab := fun stx => do
   -- `wellscoped` modifier (child 1) ⟹ the `Fin`-indexed backend (plan.md §8).
   let isScoped := !stx[1].isNone
-  let spec := parseSpec stx
+  let spec ← addSectionParams (parseSpec stx)
   -- Recognise container heads **on demand**: which `(F …)` heads in this signature are functors we
   -- can thread substitution through (`Prod`, or a regular polynomial functor in its type parameters
   -- like `List`/a user `Tree`/a bifunctor). No registry, no required `deriving` — just the inductive declarations themselves.

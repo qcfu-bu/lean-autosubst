@@ -79,13 +79,16 @@ declare_syntax_cat asCtor
 -- irrelevant to it.
 syntax (name := ctorDecl) "| " ident asCtorParam* " : " asArg ((" → " <|> " -> ") asArg)* : asCtor
 
-/-- A sort declaration: `name {α : Type u} (β : Type v) where | … | …`.
-The parameter binders are preserved in the generated inductive and threaded implicitly through
-generated renaming/substitution declarations. -/
+/-- A sort declaration: `name {α : Type u} (β : Type v) [inst : C α] where | … | …`.
+The parameter binders are preserved in the generated inductive. Generated renaming/substitution
+declarations thread ordinary parameters implicitly and instance parameters as instance implicits. -/
 declare_syntax_cat asSortDecl
 declare_syntax_cat asSortParam
 syntax (name := sortParamExplicit) "(" ident " : " term ")" : asSortParam
 syntax (name := sortParamImplicit) "{" ident " : " term "}" : asSortParam
+syntax (name := sortParamStrictImplicit) "⦃" ident " : " term "⦄" : asSortParam
+syntax (name := sortParamInstNamed) "[" ident " : " term "]" : asSortParam
+syntax (name := sortParamInstAnon) "[" term "]" : asSortParam
 syntax (name := sortDecl) ident asSortParam* " where " asCtor* : asSortDecl
 
 /-- The top-level command capturing the whole HOAS block. The optional `wellscoped` modifier

@@ -83,19 +83,20 @@ unicode `→` or ASCII `->` (the two may be mixed), exactly as in Lean.
   variable it carries: `tm : Nat → Type`, `var_tm : Fin n → tm n`, `lam : ty → tm (n+1) → tm n`.
   Scope indices are auto-bound implicits.
 
-Sort declarations may also carry ordinary Lean-style parameters. Explicit and implicit binders are
-preserved on the generated inductive, while generated operations/lemmas rebind them implicitly so
-calls stay compact:
+Sort declarations may also carry ordinary Lean-style parameters. Explicit, implicit, strict
+implicit, and instance binders are preserved on the generated inductive. Generated
+operations/lemmas rebind ordinary parameters implicitly so calls stay compact, while instance
+parameters stay instance-implicit:
 
 ```lean
 universe u v
 
 autosubst
-  Ty {Srt : Type u} (Ann : Type v) where
+  Ty {Srt : Type u} (Ann : Type v) [BEq Srt] where
     | base : Srt → Ty
     | tag  : Ann → Ty
 
-  Tm {Srt : Type u} (Ann : Type v) where
+  Tm {Srt : Type u} (Ann : Type v) [BEq Srt] where
     | ann   : Tm → Ty Srt Ann → Tm     -- explicit sort application
     | plain : Ty → Tm                  -- bare `Ty` means `Ty Srt Ann`
     | ext   : opaque(Thunk Srt Ann) → Tm
@@ -104,6 +105,22 @@ autosubst
 All sorts in one mutual `autosubst` block currently share the same parameter telescope. The
 `opaque(e)` wrapper accepts an arbitrary Lean type expression and treats it as a foreign leaf field:
 renaming/substitution carry it unchanged and do not inspect it for sort occurrences.
+
+Ambient `section` variables mentioned in the DSL are captured automatically as sort parameters, along
+with any section variables their types depend on. Instance section variables are captured when their
+class type depends on an already-captured variable:
+
+```lean
+section
+variable (Srt : Type u)
+variable [BEq Srt]
+
+autosubst
+  Tm where
+    | atom : Srt → Tm        -- elaborates as if `Tm (Srt : Type u) [BEq Srt]` had been written
+    | lam  : (bind Tm in Tm) → Tm
+end
+```
 
 ### Binders: `bind a in h` and `bind a, b in h`
 

@@ -156,23 +156,16 @@ def genCongr (sc : Bool) (sig : Signature) (sort : SortId) (c : IR.Constructor) 
   let ps := (c.params.map (fun (pn, _) => mkIdent pn)).toArray
   let lhs ← `($ctor $ps* $as*)
   let rhs ← `($ctor $ps* $bs*)
-  if c.params.isEmpty then
-    -- common path: field types inferred from the ctor application (autoImplicit).
-    return some (← `(command|
-      theorem $(mkIdent (congrName c.name)) $[($hs : $as = $bs)]* : $lhs = $rhs := by
-        subst_vars; rfl))
-  else
-    -- Variadic ctor (`lam (p : nat) …`): the field types mention `p` (`tm (n + p)`), which
-    -- autoImplicit binds *after* the fields and so cannot infer. Bind `{p : Nat}` first and give
-    -- each field an explicit scope-typed binder so the `+ p` is in scope.
-    let pbs ← c.params.toArray.mapM fun (pn, pty) =>
-      `(Lean.Parser.Term.bracketedBinderF| { $(mkIdent pn) : $(paramTypeTerm pty) })
-    let tys ← c.positions.toArray.mapM (fun pos => headToTerm sc sig pos.binders pos.head)
-    let fbs ← (as.zip (bs.zip tys)).mapM fun (a, b, ty) =>
-      `(Lean.Parser.Term.bracketedBinderF| { $a $b : $ty })
-    return some (← `(command|
-      theorem $(mkIdent (congrName c.name)) $pbs* $fbs* $[($hs : $as = $bs)]* : $lhs = $rhs := by
-        subst_vars; rfl))
+  let pbs ← sigImplicitBinders sig
+  let cpbs ← c.params.toArray.mapM fun (pn, pty) =>
+    `(Lean.Parser.Term.bracketedBinderF| { $(mkIdent pn) : $(paramTypeTerm pty) })
+  let tys ← c.positions.toArray.mapM (fun pos => headToTerm sc sig pos.binders pos.head)
+  let fbs ← (as.zip (bs.zip tys)).mapM fun (a, b, ty) =>
+    `(Lean.Parser.Term.bracketedBinderF| { $a $b : $ty })
+  return some (← `(command|
+    theorem $(mkIdent (congrName c.name)) $pbs* $cpbs* $fbs* $[($hs : $as = $bs)]* :
+        $lhs = $rhs := by
+      subst_vars; rfl))
 
 /-- All command syntax to generate the (de Bruijn) inductives + congruence lemmas, in order. -/
 def genCommands (sc : Bool) (sig : Signature) : CommandElabM (Array (TSyntax `command)) := do

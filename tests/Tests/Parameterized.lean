@@ -120,6 +120,94 @@ example (σTy τTy : Nat → TyP) (σTm τTm : Nat → TmP) (t : TmP) :
 
 end Polynomial
 
+namespace InstanceParams
+
+class Flavor (α : Type u) where
+  flavor : α → Nat
+
+/-! Instance parameters may be written directly in the sort telescope. Anonymous instance binders
+are given generated local names internally so explicit applications such as `@TmInst ...` can be
+emitted by the backend. -/
+autosubst
+  TmInst (Srt : Type u) [BEq Srt] [flv : Flavor Srt] where
+    | atom : Srt → TmInst
+    | lam  : (bind TmInst in TmInst) → TmInst
+    | app  : TmInst → TmInst → TmInst
+
+example {Srt : Type u} [BEq Srt] [Flavor Srt]
+    (σ τ : Nat → TmInst Srt) (t : TmInst Srt) :
+    subst_TmInst τ (subst_TmInst σ t)
+      = subst_TmInst (funcomp (subst_TmInst τ) σ) t := by
+  asimp
+
+#axiom_clean substSubst_TmInst
+
+end InstanceParams
+
+namespace SectionVars
+
+section
+variable (Srt : Type u)
+
+/-! Section variables mentioned in the DSL are promoted to sort parameters automatically. -/
+autosubst
+  TmSec where
+    | atom : Srt → TmSec
+    | lam  : (bind TmSec in TmSec) → TmSec
+    | app  : TmSec → TmSec → TmSec
+
+example (σ τ : Nat → TmSec Srt) (t : TmSec Srt) :
+    subst_TmSec τ (subst_TmSec σ t)
+      = subst_TmSec (funcomp (subst_TmSec τ) σ) t := by
+  asimp
+
+#axiom_clean substSubst_TmSec
+
+end
+
+inductive Mark (Srt : Type u) (tok : Srt) where
+  | mk : Mark Srt tok
+
+section
+variable {Srt : Type u} (tok : Srt)
+
+/-! Dependency closure: capturing `tok` also captures the `Srt` it depends on. -/
+autosubst
+  TmDep where
+    | mark : Mark Srt tok → TmDep
+    | dlam : (bind TmDep in TmDep) → TmDep
+    | dapp : TmDep → TmDep → TmDep
+
+example (σ τ : Nat → @TmDep Srt tok) (t : @TmDep Srt tok) :
+    subst_TmDep τ (subst_TmDep σ t)
+      = subst_TmDep (funcomp (subst_TmDep τ) σ) t := by
+  asimp
+
+#axiom_clean substSubst_TmDep
+
+end
+
+section
+variable (Srt : Type u) [BEq Srt]
+
+/-! Instance section variables whose class type depends on captured variables are promoted too. -/
+autosubst
+  TmSecInst where
+    | atom : Srt → TmSecInst
+    | ilam : (bind TmSecInst in TmSecInst) → TmSecInst
+    | iapp : TmSecInst → TmSecInst → TmSecInst
+
+example (σ τ : Nat → TmSecInst Srt) (t : TmSecInst Srt) :
+    subst_TmSecInst τ (subst_TmSecInst σ t)
+      = subst_TmSecInst (funcomp (subst_TmSecInst τ) σ) t := by
+  asimp
+
+#axiom_clean substSubst_TmSecInst
+
+end
+
+end SectionVars
+
 namespace Scoped
 
 /-! Parameterized sorts also work in the well-scoped backend when no nested container over the
@@ -148,6 +236,7 @@ end Scoped
 #axiom_clean substSubst_Tm
 #axiom_clean ExplicitRefs.substSubst_Tm2
 #axiom_clean Polynomial.substSubst_TmP
+#axiom_clean InstanceParams.substSubst_TmInst
 #axiom_clean Scoped.substSubst_TmS
 
 end Parameterized

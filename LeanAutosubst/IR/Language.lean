@@ -20,12 +20,21 @@ namespace Autosubst.IR
 declarations can use it directly. -/
 abbrev SortId := Name
 
-/-- A declaration parameter on a syntactic sort. The DSL preserves Lean's explicit/implicit binder
-surface, while generated operations usually rebind these as implicit parameters. -/
+/-- The binder shape of a declaration parameter on a syntactic sort. -/
+inductive ParamKind where
+  | explicit
+  | implicit
+  | strictImplicit
+  | instImplicit
+  deriving Repr, BEq, Inhabited, DecidableEq
+
+/-- A declaration parameter on a syntactic sort. The DSL preserves Lean's binder surface, while
+generated operations usually rebind ordinary parameters implicitly and preserve instance parameters
+as instance implicits. -/
 structure Param where
   name : Name
   type : Syntax
-  implicit : Bool
+  kind : ParamKind
   deriving Repr, BEq, Inhabited
 
 /-- A binder introduced at a constructor-argument position. `single s` is `bind s in _`;
