@@ -268,7 +268,7 @@ def elabAutosubst : CommandElab := fun stx => do
     for cmd in (← Autosubst.Gen.genLemmaCommands shapes isScoped sig) do
       elabCommand cmd
     -- Phase 6: register the tactic-facing lemmas into the `@[asimp]` simp set.
-    for cmd in (← Autosubst.Gen.genAutomationCommands sig) do
+    for cmd in (← Autosubst.Gen.genAutomationCommands isScoped sig) do
       elabCommand cmd
     -- Notation pass: per-sort `Subst*`/`Ren*`/`Var` instances backing the `s[σ]`/`s⟨ξ⟩`/`t..` notations.
     for cmd in (← Autosubst.Gen.genNotationCommands isScoped sig) do

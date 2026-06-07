@@ -16,7 +16,7 @@ namespace Autosubst.Gen
 open Autosubst.IR
 
 /-- `attribute [asimp] …` commands registering the tactic-facing lemmas of `sig`. -/
-def genAutomationCommands (sig : Signature) : CommandElabM (Array (TSyntax `command)) := do
+def genAutomationCommands (sc : Bool) (sig : Signature) : CommandElabM (Array (TSyntax `command)) := do
   let opens := openSorts sig
   let mut out : Array (TSyntax `command) := #[]
   -- unfold the lifting functions (Coq's `unfold up_* upRen_* up_list_* upRen_list_*`)
@@ -54,6 +54,20 @@ def genAutomationCommands (sig : Signature) : CommandElabM (Array (TSyntax `comm
       -- (subst (var ∘ ξ) ⇒ ren), tagged with `←` into its own set.
       out := out.push (← `(command| attribute [substify_lemmas] $(mkIdent (rinstInstPName s))))
       out := out.push (← `(command| attribute [renamify_lemmas ←] $(mkIdent (rinstInstPName s))))
+      -- Function-level (unapplied) ren⇒subst, mirroring Coq's `rinstInst'Fun`. Lets `substify`/
+      -- `renamify` convert a bare `ren_s ξ` / `subst_s (var ∘ ξ)` sitting as a `funcomp` argument
+      -- (where the applied `rinstInst'_s` cannot fire), keeping the two representations confluent.
+      if si.isOpen then
+        let pbs ← sigImplicitBinders sig
+        let funName := mkIdent (Name.mkSimple s!"rinstInstFun'_{s}")
+        let xiTy ← mapTy sc sig true s "m" "n"
+        out := out.push (← `(command|
+          theorem $funName $pbs* (ξ : $xiTy) :
+            $(mkIdent (renName s)) ξ
+              = $(mkIdent (substName s)) ($(mkIdent ``Autosubst.funcomp) $(mkIdent (s ++ varName s)) ξ) :=
+            funext ($(mkIdent (rinstInstPName s)) ξ)))
+        out := out.push (← `(command| attribute [substify_lemmas] $funName))
+        out := out.push (← `(command| attribute [renamify_lemmas ←] $funName))
   return out
 
 end Autosubst.Gen
