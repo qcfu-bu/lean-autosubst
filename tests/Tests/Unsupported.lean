@@ -64,3 +64,21 @@ inductive tm : Nat → Type
   | lam : tm (n + 1) → tm n
 
 end XFail.ScopedContainer
+
+/-! ## 4. Name hygiene failures are rejected before generated Lean code is elaborated. -/
+namespace XFail.NameHygiene
+open Autosubst
+
+/-- error: Duplicate parameter name(s) on sort 'tm': Srt. -/
+#guard_msgs in
+autosubst
+  tm (Srt : Type) {Srt : Type} where
+    | lam : (bind tm in tm) → tm
+
+/-- error: Constructor 'var_tm' of sort 'tm' conflicts with generated variable constructor 'var_tm'. -/
+#guard_msgs in
+autosubst
+  tm where
+    | var_tm : (bind tm in tm) → tm
+
+end XFail.NameHygiene

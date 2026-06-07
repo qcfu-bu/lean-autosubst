@@ -4,7 +4,7 @@
 Consumes an analyzed `Signature` and produces de Bruijn `inductive` command syntax (one per
 component — a `mutual … end` block for a genuine SCC, a lone `inductive` for a singleton),
 each open sort getting its variable constructor and every user constructor lowered by **erasing
-binders**. Also emits the `congr_<ctor>` congruence lemmas.
+binders**. Also emits the `congr_<sort>_<ctor>` congruence lemmas.
 
 Two backends (plan.md §4), selected by `sc : Bool`:
   • **unscoped** — `var_<s> : Nat → s`, fields are the bare head types;
@@ -24,8 +24,9 @@ open Lean Elab Command
 namespace Autosubst.Gen
 open Autosubst.IR
 
-/-- The `congr_<ctor>` lemma name. -/
-def congrName (c : Name) : Name := Name.mkSimple s!"congr_{c}"
+/-- The `congr_<sort>_<ctor>` lemma name. Including the sort keeps generated names stable when
+two syntactic categories use the same constructor name. -/
+def congrName (s c : Name) : Name := Name.mkSimple s!"congr_{s}_{c}"
 
 /-- An argument head ⟶ its de Bruijn field type. Binders are passed for scope increments
 (scoped mode); they are erased in unscoped mode. `sc` selects the backend. -/
@@ -140,7 +141,7 @@ partial def headSubstitutable (sig : Signature) : ArgHead → Bool
 def ctorIsLeaf (sig : Signature) (c : IR.Constructor) : Bool :=
   c.positions.all (fun p => !headSubstitutable sig p.head)
 
-/-- The `congr_<ctor>` lemma for a non-leaf constructor (none for a leaf — nullary or all-`ext`).
+/-- The `congr_<sort>_<ctor>` lemma for a non-leaf constructor (none for a leaf — nullary or all-`ext`).
 The hypothesis variables `a_i`/`b_i` are auto-bound implicits, their (scope-indexed) types inferred
 from the constructor application. A leaf constructor needs no congruence lemma: the tower closes its
 cases by `rfl`, and an all-`ext` constructor's `congr` would carry an un-inferable result scope in
@@ -163,7 +164,7 @@ def genCongr (sc : Bool) (sig : Signature) (sort : SortId) (c : IR.Constructor) 
   let fbs ← (as.zip (bs.zip tys)).mapM fun (a, b, ty) =>
     `(Lean.Parser.Term.bracketedBinderF| { $a $b : $ty })
   return some (← `(command|
-    theorem $(mkIdent (congrName c.name)) $pbs* $cpbs* $fbs* $[($hs : $as = $bs)]* :
+    theorem $(mkIdent (congrName sort c.name)) $pbs* $cpbs* $fbs* $[($hs : $as = $bs)]* :
         $lhs = $rhs := by
       subst_vars; rfl))
 

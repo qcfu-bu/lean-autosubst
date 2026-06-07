@@ -52,7 +52,7 @@ partial def parseHead (declared : List Name) (s : Syntax) : ArgHead :=
 
 /-- Deterministic local names for anonymous instance parameters (`[C α]`). They must be nameable
 because generated code applies parameterized sorts explicitly via `@Sort ...`. -/
-def anonInstName (idx : Nat) : Name := Name.mkSimple s!"instParam{idx}"
+def anonInstName (idx : Nat) : Name := Name.mkSimple s!"autosubstInstParam{idx}"
 
 def enumerateFrom {α : Type} (idx : Nat) : List α → List (Nat × α)
   | [] => []

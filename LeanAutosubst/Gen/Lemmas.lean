@@ -6,7 +6,7 @@ golden files (Coq `ap`↦`congrArg`, `eq_trans`↦`.trans`, `eq_sym`↦`.symm`),
 provable against the hand-written golden tower (unscoped *and* well-scoped).
 
 A recursive lemma (`idSubst`, `ext*`, `comp*`, `rinst_inst`) shares one skeleton: a structural
-recursion on the term whose constructor cases apply `congr_<ctor>` to per-position sub-proofs
+recursion on the term whose constructor cases apply `congr_<sort>_<ctor>` to per-position sub-proofs
 (a recursive call at *lifted* maps under binders, or `rfl` for non-substitutable positions),
 and whose variable case is family-specific. The per-family data is captured in `Family`;
 `genRecLemma` is the shared emitter. The non-recursive `up_*` helper lemmas are emitted
@@ -195,7 +195,7 @@ def genRecLemma (sc : Bool) (fam : Family) (sig : Signature) (si : SortInfo) : C
     -- scoped mode, `congr_<c>` would otherwise be the one with an un-inferable result scope).
     let rhs2 ← if ctorIsLeaf sig c then `(rfl) else do
       let proofs ← (c.positions.toArray.zip xs).mapM fun (pos, x) => genRecPos sc fam sig pos x
-      appAll (mkIdent (congrName c.name)) proofs.toList
+      appAll (mkIdent (congrName s c.name)) proofs.toList
     alts := alts.push (← `(Lean.Parser.Term.matchAltExpr| | $pat => $rhs2))
   `(command| theorem $(mkIdent (fam.lemmaName s)) $pbs* $params* : ∀ ($tId : $tTy), $lhs = $rhs
       $alts:matchAlt*)
@@ -331,7 +331,7 @@ def genRecBodies (containers : Containers) (sc : Bool) (fam : Family) (sig : Sig
       else do
         let proofs ← (c.positions.toArray.zip xs).mapM fun (pos, x) =>
           genHeadProof containers sc fam sig s vec pos.binders pos.head x
-        let term ← appAll (mkIdent (congrName c.name)) proofs.toList
+        let term ← appAll (mkIdent (congrName s c.name)) proofs.toList
         `(Lean.Parser.Term.matchAltExpr|
           | $pat => by simp only [$renE:ident, $substE:ident]; exact $term)
     alts := alts.push arm

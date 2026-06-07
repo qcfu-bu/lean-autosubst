@@ -78,11 +78,51 @@ def reachStrict (succ : SortId → List SortId) (t : SortId) : List SortId :=
 def reachRefl (succ : SortId → List SortId) (t : SortId) : List SortId :=
   (t :: reachStrict succ t).eraseDups
 
+def generatedVarName (s : SortId) : Name := Name.mkSimple s!"var_{s}"
+
+def duplicateNames (xs : List Name) : List Name := Id.run do
+  let mut seen : List Name := []
+  let mut dups : List Name := []
+  for x in xs do
+    let x := x.eraseMacroScopes
+    if seen.contains x then
+      unless dups.contains x do
+        dups := dups ++ [x]
+    else
+      seen := seen ++ [x]
+  dups
+
+def namesMsg (xs : List Name) : String :=
+  String.intercalate ", " (xs.map (toString ·))
+
+/-- Reject name patterns that would otherwise fail later in generated Lean code with much less
+local diagnostics. -/
+def validateNames (sp : Spec) : Except String Unit := do
+  let sortDups := duplicateNames sp.sortNames
+  unless sortDups.isEmpty do
+    throw s!"Duplicate autosubst sort name(s): {namesMsg sortDups}."
+  for sd in sp.sorts do
+    let paramDups := duplicateNames (sd.params.map (·.name))
+    unless paramDups.isEmpty do
+      throw s!"Duplicate parameter name(s) on sort '{sd.name}': {namesMsg paramDups}."
+    let ctorDups := duplicateNames (sd.ctors.map (·.name))
+    unless ctorDups.isEmpty do
+      throw s!"Duplicate constructor name(s) on sort '{sd.name}': {namesMsg ctorDups}."
+    for c in sd.ctors do
+      if c.name.eraseMacroScopes == generatedVarName sd.name then
+        throw s!"Constructor '{c.name}' of sort '{sd.name}' conflicts with generated variable \
+          constructor '{generatedVarName sd.name}'."
+      let ctorParamDups := duplicateNames (c.params.map (·.1))
+      unless ctorParamDups.isEmpty do
+        throw s!"Duplicate variadic constructor parameter name(s) in constructor '{c.name}' of \
+          sort '{sd.name}': {namesMsg ctorParamDups}."
+
 /-- Analyze a parsed spec, or fail with a vacuous-binding error. `sc` selects the well-scoped
 backend, which alone supports variadic `bind ⟨p, _⟩` binders (the unscoped/`Nat` variadic form is
 unported, as upstream — see plan.md §9/§10). -/
 def analyze (sp : Spec) (sc : Bool := false) (containers : List Name := supportedFunctors) :
     Except String Signature := do
+  validateNames sp
   let succ := directArgs sp
   let canonical := sp.sortNames
   let paramSig (ps : List Param) : List (Name × Syntax × ParamKind) :=

@@ -219,7 +219,7 @@ kinds of variable `s` contains), `autosubst` emits, with these exact names:
 | name                                                                           | meaning                                                   |
 | ------------------------------------------------------------------------------ | --------------------------------------------------------- |
 | `s`, `var_s`                                                                   | the de Bruijn inductive and its variable constructor      |
-| `congr_<ctor>`                                                                 | congruence lemma, one per non-leaf constructor            |
+| `congr_<sort>_<ctor>`                                                          | congruence lemma, one per non-leaf constructor            |
 | `ren_s`, `subst_s`                                                             | parallel renaming/substitution (one map per `vᵢ`)         |
 | `upRen_b_v`, `up_b_v`                                                          | lift a renaming/substitution through a binder of sort `b` |
 | `idSubst_s`, `extRen_s`, `ext_s`                                               | `subst id = id` and extensionality                        |

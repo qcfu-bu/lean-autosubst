@@ -120,6 +120,35 @@ example (σTy τTy : Nat → TyP) (σTm τTm : Nat → TmP) (t : TmP) :
 
 end Polynomial
 
+namespace RobustNames
+
+/-! Reusing a constructor name across different sorts should not collide in generated congruence
+lemmas. -/
+autosubst
+  DupA where
+    | same : (bind DupA in DupA) → DupA
+
+  DupB where
+    | same : (bind DupB in DupB) → DupB
+
+example : ∀ {a b : DupA}, a = b → DupA.same a = DupA.same b :=
+  @congr_DupA_same
+
+example : ∀ {a b : DupB}, a = b → DupB.same a = DupB.same b :=
+  @congr_DupB_same
+
+example (σ τ : Nat → DupA) (t : DupA) :
+    subst_DupA τ (subst_DupA σ t)
+      = subst_DupA (funcomp (subst_DupA τ) σ) t := by
+  asimp
+
+example (σ τ : Nat → DupB) (t : DupB) :
+    subst_DupB τ (subst_DupB σ t)
+      = subst_DupB (funcomp (subst_DupB τ) σ) t := by
+  asimp
+
+end RobustNames
+
 namespace InstanceParams
 
 class Flavor (α : Type u) where
