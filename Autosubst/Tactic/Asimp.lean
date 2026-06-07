@@ -59,7 +59,10 @@ syntax (name := substifyStx) "substify" (location)? : tactic
 
 macro_rules
   | `(tactic| substify $[$loc]?) =>
-    `(tactic| simp only [substify_lemmas] $[$loc]? <;> asimp $[$loc]?)
+    -- the cleanup `asimp` is tolerant: like Coq's `repeat`-based `asimpl`, the trailing
+    -- normalization must not fail when there is nothing left to simplify (e.g. the goal is a
+    -- relation, not an equation). Mirrors `renamify` below.
+    `(tactic| simp only [substify_lemmas] $[$loc]? <;> (try asimp $[$loc]?))
 
 open Lean.Parser.Tactic in
 /-- `renamify` — the reverse of `substify`: rewrite substitutions `subst_s (var ∘ ξ) ↦ ren_s ξ`

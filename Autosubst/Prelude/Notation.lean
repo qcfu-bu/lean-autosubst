@@ -62,14 +62,18 @@ class Up (X : Type _) (X' : outParam (Type _)) where
 namespace Notation
 open Lean
 
-/-- `s[σ]` — substitution application (one map). Overloads `GetElem` indexing. -/
-scoped notation:max s:max "[" σ "]" => Autosubst.Subst1.subst1 σ s
+-- Applied forms use `noWs` before the opening bracket — mirroring Lean's `getElem` `xs[i]` — so
+-- that `f [x]` / `g [] []` *with a space* still parse as application to list literals, while
+-- `s[σ]` (no space) is substitution. (Without `noWs`, `s:max "["` greedily captures a following
+-- `[…]`, so `[] []` failed to parse.)
+/-- `s[σ]` — substitution application (one map). -/
+scoped syntax:max (name := substApp1) term:max noWs "[" term "]" : term
 /-- `s[σ;τ]` — parallel substitution application (two maps, for multi-sort vectors). -/
-scoped notation:max s:max "[" σ ";" τ "]" => Autosubst.Subst2.subst2 σ τ s
+scoped syntax:max (name := substApp2) term:max noWs "[" term ";" term "]" : term
 /-- `s⟨ξ⟩` — renaming application (one map). -/
-scoped notation:max s:max "⟨" ξ "⟩" => Autosubst.Ren1.ren1 ξ s
+scoped syntax:max (name := renApp1) term:max noWs "⟨" term "⟩" : term
 /-- `s⟨ξ;ζ⟩` — parallel renaming application (two maps). -/
-scoped notation:max s:max "⟨" ξ ";" ζ "⟩" => Autosubst.Ren2.ren2 ξ ζ s
+scoped syntax:max (name := renApp2) term:max noWs "⟨" term ";" term "⟩" : term
 /-- `[σ]` — substitution as a function (`fscope` form). -/
 scoped notation:max "[" σ "]" => Autosubst.Subst1.subst1 σ
 /-- `⟨ξ⟩` — renaming as a function (`fscope` form). -/
@@ -84,15 +88,25 @@ scoped notation:max "⇑" σ:max => Autosubst.Up.up σ
 /-- `[a, b, c/]` — the explicit finite substitution `a .: b .: c .: ids`: a prefix of terms with an
 identity tail, the `/` marking it a substitution. `[a/]` is the basic single-variable substitution
 `a .: ids` (= `a..`). (`/]` is one token, so the term before it is never read as a division.) -/
-scoped syntax:max "[" term,+ "/]" : term
+scoped syntax:max (name := substFin) "[" term,+ "/]" : term
 /-- `s[a, b, c/]` — apply that explicit substitution to `s` (so `s[t/]` is the β-substitution). -/
-scoped syntax:max term:max "[" term,+ "/]" : term
+scoped syntax:max (name := substAppFin) term:max noWs "[" term,+ "/]" : term
 open Autosubst in
-macro_rules
+macro_rules (kind := substApp1) | `($s[$σ]) => `(Autosubst.Subst1.subst1 $σ $s)
+open Autosubst in
+macro_rules (kind := substApp2) | `($s[$σ ; $τ]) => `(Autosubst.Subst2.subst2 $σ $τ $s)
+open Autosubst in
+macro_rules (kind := renApp1) | `($s⟨$ξ⟩) => `(Autosubst.Ren1.ren1 $ξ $s)
+open Autosubst in
+macro_rules (kind := renApp2) | `($s⟨$ξ ; $ζ⟩) => `(Autosubst.Ren2.ren2 $ξ $ζ $s)
+open Autosubst in
+macro_rules (kind := substFin)
   | `([ $ts,* /]) => do
       let mut acc ← `(Var.ids)
       for t in ts.getElems.reverse do acc ← `(scons $t $acc)
       return acc
+open Autosubst in
+macro_rules (kind := substAppFin)
   | `($s[ $ts,* /]) => do
       let mut acc ← `(Var.ids)
       for t in ts.getElems.reverse do acc ← `(scons $t $acc)
@@ -107,10 +121,12 @@ namespace Scoped.Notation
 open Autosubst (Subst1 Subst2 Ren1 Ren2 Var)
 open Lean
 
-scoped notation:max s:max "[" σ "]" => Subst1.subst1 σ s
-scoped notation:max s:max "[" σ ";" τ "]" => Subst2.subst2 σ τ s
-scoped notation:max s:max "⟨" ξ "⟩" => Ren1.ren1 ξ s
-scoped notation:max s:max "⟨" ξ ";" ζ "⟩" => Ren2.ren2 ξ ζ s
+-- Applied forms use `noWs` (see the unscoped namespace above) so `f [x]` / `f ⟨c⟩` with a space
+-- stay application, while `s[σ]` / `s⟨ξ⟩` (no space) are substitution / renaming.
+scoped syntax:max (name := substApp1) term:max noWs "[" term "]" : term
+scoped syntax:max (name := substApp2) term:max noWs "[" term ";" term "]" : term
+scoped syntax:max (name := renApp1) term:max noWs "⟨" term "⟩" : term
+scoped syntax:max (name := renApp2) term:max noWs "⟨" term ";" term "⟩" : term
 scoped notation:max "[" σ "]" => Subst1.subst1 σ
 scoped notation:max "⟨" ξ "⟩" => Ren1.ren1 ξ
 scoped notation:max t:max ".." => Autosubst.Scoped.scons t Var.ids
@@ -118,14 +134,19 @@ scoped notation:max "↑" => Autosubst.Scoped.shift
 scoped notation:max "⇑" σ:max => Autosubst.Up.up σ
 
 /-- `[a, b, c/]` — the explicit finite (well-scoped) substitution `a .: b .: c .: ids`. -/
-scoped syntax:max "[" term,+ "/]" : term
+scoped syntax:max (name := substFin) "[" term,+ "/]" : term
 /-- `s[a, b, c/]` — apply that explicit substitution to `s`. -/
-scoped syntax:max term:max "[" term,+ "/]" : term
-macro_rules
+scoped syntax:max (name := substAppFin) term:max noWs "[" term,+ "/]" : term
+macro_rules (kind := substApp1) | `($s[$σ]) => `(Subst1.subst1 $σ $s)
+macro_rules (kind := substApp2) | `($s[$σ ; $τ]) => `(Subst2.subst2 $σ $τ $s)
+macro_rules (kind := renApp1) | `($s⟨$ξ⟩) => `(Ren1.ren1 $ξ $s)
+macro_rules (kind := renApp2) | `($s⟨$ξ ; $ζ⟩) => `(Ren2.ren2 $ξ $ζ $s)
+macro_rules (kind := substFin)
   | `([ $ts,* /]) => do
       let mut acc ← `(Var.ids)
       for t in ts.getElems.reverse do acc ← `(Autosubst.Scoped.scons $t $acc)
       return acc
+macro_rules (kind := substAppFin)
   | `($s[ $ts,* /]) => do
       let mut acc ← `(Var.ids)
       for t in ts.getElems.reverse do acc ← `(Autosubst.Scoped.scons $t $acc)
