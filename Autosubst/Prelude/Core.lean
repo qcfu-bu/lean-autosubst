@@ -23,6 +23,14 @@ core `>>` (`HAndThen`/seq) so composition is chosen for function arguments witho
 error; monadic `>>` still applies where `funcomp` does not typecheck. -/
 scoped infixr:80 (priority := high) " >> " => fun f g => funcomp g f
 
+-- Display `funcomp g f` back as the forward-composition notation `f >> g` (the `>>` notation expands
+-- through a lambda wrapper, so it has no auto-generated unexpander). Matches the argument flip
+-- `f >> g = funcomp g f`. Active wherever `Autosubst` is open, so it also renders generic
+-- compositions as `>>`.
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.funcomp] def unexpFuncomp : Unexpander
+  | `($_ $g $f) => `($f >> $g) | _ => throw ()
+
 theorem funcomp_assoc {W X Y Z : Sort _} (g : Y → Z) (f : X → Y) (h : W → X) :
     funcomp g (funcomp f h) = funcomp (funcomp g f) h := rfl
 
