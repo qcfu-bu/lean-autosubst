@@ -131,6 +131,42 @@ scoped notation:max "↑" => Autosubst.shift
 /-- `⇑σ` — lift the substitution/renaming `σ` under one binder (`up_b_v σ`; single-open-sort only). -/
 scoped notation:max "⇑" σ:max => Autosubst.Up.up σ
 
+-- Prefer the **postfix** display `s[σ⃗]` / `s⟨ξ⃗⟩` for an *applied* substitution/renaming, rather than
+-- the prefix-function form `[σ⃗] s` that the bare `Subst{k}.subst{k}` delaboration would otherwise
+-- give. Each unexpander matches only the fully-applied spine (maps + subject); a partially-applied
+-- `Subst{k}.subst{k} σ⃗` (e.g. sitting inside a `funcomp`) falls through to the `[σ⃗]`/`⟨ξ⟩` function
+-- notations above. The methods are backend-independent, so these cover both unscoped and well-scoped.
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Subst1.subst1] def unexpSubst1 : Unexpander
+  | `($_ $σ $s) => `($s[$σ]) | _ => throw ()
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Subst2.subst2] def unexpSubst2 : Unexpander
+  | `($_ $σ₁ $σ₂ $s) => `($s[$σ₁ ; $σ₂]) | _ => throw ()
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Subst3.subst3] def unexpSubst3 : Unexpander
+  | `($_ $σ₁ $σ₂ $σ₃ $s) => `($s[$σ₁ ; $σ₂ ; $σ₃]) | _ => throw ()
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Subst4.subst4] def unexpSubst4 : Unexpander
+  | `($_ $σ₁ $σ₂ $σ₃ $σ₄ $s) => `($s[$σ₁ ; $σ₂ ; $σ₃ ; $σ₄]) | _ => throw ()
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Subst5.subst5] def unexpSubst5 : Unexpander
+  | `($_ $σ₁ $σ₂ $σ₃ $σ₄ $σ₅ $s) => `($s[$σ₁ ; $σ₂ ; $σ₃ ; $σ₄ ; $σ₅]) | _ => throw ()
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Ren1.ren1] def unexpRen1 : Unexpander
+  | `($_ $ξ $s) => `($s⟨$ξ⟩) | _ => throw ()
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Ren2.ren2] def unexpRen2 : Unexpander
+  | `($_ $ξ₁ $ξ₂ $s) => `($s⟨$ξ₁ ; $ξ₂⟩) | _ => throw ()
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Ren3.ren3] def unexpRen3 : Unexpander
+  | `($_ $ξ₁ $ξ₂ $ξ₃ $s) => `($s⟨$ξ₁ ; $ξ₂ ; $ξ₃⟩) | _ => throw ()
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Ren4.ren4] def unexpRen4 : Unexpander
+  | `($_ $ξ₁ $ξ₂ $ξ₃ $ξ₄ $s) => `($s⟨$ξ₁ ; $ξ₂ ; $ξ₃ ; $ξ₄⟩) | _ => throw ()
+open Lean PrettyPrinter in
+@[app_unexpander Autosubst.Ren5.ren5] def unexpRen5 : Unexpander
+  | `($_ $ξ₁ $ξ₂ $ξ₃ $ξ₄ $ξ₅ $s) => `($s⟨$ξ₁ ; $ξ₂ ; $ξ₃ ; $ξ₄ ; $ξ₅⟩) | _ => throw ()
+
 /-- `[a, b, c/]` — the explicit finite substitution `a .: b .: c .: ids`: a prefix of terms with an
 identity tail, the `/` marking it a substitution. `[a/]` is the basic single-variable substitution
 `a .: ids` (= `a..`). (`/]` is one token, so the term before it is never read as a division.) -/
