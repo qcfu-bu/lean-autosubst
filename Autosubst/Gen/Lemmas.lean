@@ -811,18 +811,13 @@ def famCompSubstSubst : Family where
       hh ← appAll (mkIdent (upLemmaNameB "up_subst_subst" b u)) ((← unders ((vecOf sig u).length + 2)) ++ [hh])
     pure hh
 
-/-! ## The raw `rinstInst` bridge — `substify` / `renamify` plumbing.
+/-! ## `substify` / `renamify` bridge names + shared map binders.
 
-The σ-calculus laws (fusion / identity / variable) are emitted in notation/method form, **under
-their canonical names**, by [Gen/Laws.lean] — proved directly from the recursive tower
-above (`compRenRen_s`/`idSubst_s`/`rinst_inst_s`), to which they are definitionally equal. There is
-no separate raw-op wrapper layer.
-
-The only raw-op equational wrappers that remain are the ren⇒subst **bridge** `rinstInst'_s`
-(applied, `ren_s ξ⃗ t = subst_s (var ∘ ξ⃗) t`) and `rinstInst_s` (its funext form). They stay over
-the raw ops on purpose: `substify`/`renamify` ([Gen/Automation.lean]) rewrite user goals that are
-stated with raw `ren_s`/`subst_s`, so the bridge must match raw heads (whereas the `Gen/Notation.lean`
-canon lemmas move notation⟶method the other way, for `asimp`). -/
+The ren⇒subst bridge lemmas `rinstInst'_s` (applied, `s⟨ξ⃗⟩ = s[var ∘ ξ⃗]`) and `rinstInst_s`
+(funext) are emitted in **method/notation form**, under these canonical names, by
+[Gen/Automation.lean]'s `genRinstInstMethod` — proved from the recursive `rinst_inst_s` tower (to which
+they are defeq) and tagged into `substify_lemmas`/`renamify_lemmas` there. There is **no** raw-op
+rinstInst wrapper: `substify`/`renamify` operate in the same notation vocabulary as `asimp`. -/
 
 def rinstInstPName (s : SortId) : Name := Name.mkSimple s!"rinstInst'_{s}"
 def rinstInstWName (s : SortId) : Name := Name.mkSimple s!"rinstInst_{s}"
@@ -832,39 +827,6 @@ def funextI : Ident := mkIdent ``funext
 def mapBindersFor (sc : Bool) (sig : Signature) (pfx : String) (isRen : Bool) (domSt codSt : String)
     (vec : List SortId) : CommandElabM (Array (TSyntax ``Lean.Parser.Term.bracketedBinder)) := do
   vec.toArray.mapM fun v => mapBinder sc sig isRen v domSt codSt (Name.mkSimple s!"{pfx}_{v}")
-
-/-- The raw ren⇒subst bridge lemmas for sort `s`: `rinstInst'_s` (applied) and `rinstInst_s`
-(funext/map-level), both proved from the recursive `rinst_inst_s`. Tagged into `substify`/`renamify`
-by [Gen/Automation.lean]; deliberately stated over the raw ops (see the section note above). -/
-def genRinstInstWrappers (sc : Bool) (sig : Signature) (si : SortInfo) :
-    CommandElabM (Array (TSyntax `command)) := do
-  let s := si.name; let vec := si.substVec; let tI := mkIdent `t
-  let pbs ← sigImplicitBinders sig
-  let fc (g f : Term) : CommandElabM Term := `($funcompI $g $f)
-  let tTy ← sortTyAt sc sig s "m"
-  let tTyN ← sortTyAt sc sig s "n"
-  let varAt (st : String) (v : SortId) : CommandElabM Term := do
-    let idx ← if sc then `(Fin $(scopeVar st v)) else `(Nat)
-    let ty ← sortTyAt sc sig v st
-    `(($(varCtorI v) : $idx → $ty))
-  let mut out : Array (TSyntax `command) := #[]
-  let bxi ← mapBindersFor sc sig "xi" true "m" "n" vec
-  let renApp ← opApp (renName s) (vec.map (mapIdent "xi")) tI
-  let varXiMaps ← vec.mapM fun v => do fc (← varAt "n" v) (mapIdent "xi" v)
-  let substVarXi ← appAll (mkIdent (substName s)) (varXiMaps ++ [idTm tI])
-  let rinstProof ← appAll (mkIdent (rinstInstName s))
-    ((vec.map fun v => idTm (mapIdent "xi" v)) ++ (← unders vec.length)
-      ++ (← vec.mapM fun _ => `(fun _ => rfl)) ++ [idTm tI])
-  out := out.push (← `(command| theorem $(mkIdent (rinstInstPName s)) $pbs* $bxi* ($tI : $tTy) :
-      $renApp = $substVarXi := $rinstProof))
-  let rinstApplied ← appAll (mkIdent (rinstInstPName s)) (vec.map fun v => idTm (mapIdent "xi" v))
-  let renPart0 ← appAll (mkIdent (renName s)) (vec.map fun v => idTm (mapIdent "xi" v))
-  let substPart0 ← appAll (mkIdent (substName s)) varXiMaps
-  let renPart ← `(($renPart0 : $tTy → $tTyN))
-  let substPart ← `(($substPart0 : $tTy → $tTyN))
-  out := out.push (← `(command| theorem $(mkIdent (rinstInstWName s)) $pbs* $bxi* :
-      $renPart = $substPart := $funextI $rinstApplied))
-  return out
 
 /-! ## Orchestration (incremental) -/
 
@@ -921,11 +883,8 @@ def genLemmaCommands (containers : Containers) (sc : Bool) (sig : Signature) :
   cmds := cmds ++ (← ups genUpSubstRen) ++ (← vups genUpSubstRenList) ++ (← recLemmas famCompSubstRen)
   cmds := cmds ++ (← ups genUpSubstSubst) ++ (← vups genUpSubstSubstList) ++ (← recLemmas famCompSubstSubst)
   cmds := cmds ++ (← ups genRinstInstUp) ++ (← vups genRinstInstUpList) ++ (← recLemmas famRinstInst)
-  -- the raw `rinstInst` bridge (per substitution sort) — `substify`/`renamify` plumbing. The
-  -- σ-calculus laws themselves are emitted in method form by `Gen/Laws.lean`.
-  for comp in sig.components do
-    for si in substSortsOf sig comp do
-      cmds := cmds ++ (← genRinstInstWrappers sc sig si)
+  -- The `rinstInst` bridge (`substify`/`renamify`) is emitted in method form by `Gen/Automation.lean`,
+  -- after the notation instances — there is no raw-op rinstInst wrapper.
   return cmds
 
 end Autosubst.Gen

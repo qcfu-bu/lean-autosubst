@@ -14,7 +14,6 @@ import Autosubst.Gen.Subst
 import Autosubst.Gen.Lemmas
 import Autosubst.Gen.Automation
 import Autosubst.Gen.Notation
-import Autosubst.Gen.Laws
 import Autosubst.Tactic.Asimp
 
 open Lean Elab Command

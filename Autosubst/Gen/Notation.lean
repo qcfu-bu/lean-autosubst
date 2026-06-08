@@ -12,7 +12,7 @@ The notations are arity-dispatched: a sort whose substitution vector has length 
 set and our notation set); vectors longer than 5 simply get no notation (raw ops still apply).
 
 `asimp` is **notation-native**: its σ-calculus rewrite set is stated over the class methods /
-notations ([Gen/Laws.lean]). So this module emits, per sort/arity, the `@[asimp_lemmas]` **canon**
+notations ([Gen/Automation.lean]). So this module emits, per sort/arity, the `@[asimp_lemmas]` **canon**
 lemmas that rewrite each construct *toward* `asimp`'s normal form:
 
 * `substCanon{k}`/`renCanon{k}` (`subst_s σ⃗ = subst{k} σ⃗`, …) — raw op ⟶ the `[σ⃗]`/`⟨ξ⃗⟩` method

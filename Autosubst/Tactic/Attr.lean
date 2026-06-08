@@ -7,7 +7,7 @@ that declares it).
 The set is named `asimp_lemmas`, **distinct** from the `asimp` tactic: if they shared a name,
 `open`ing the tactic's namespace (or both living at root) would shadow the set name inside
 `simp only [asimp]` and silently empty it. The notation-native σ-calculus lemmas
-([Gen/Laws.lean]) and the raw⟶method canon lemmas ([Gen/Notation.lean]) each carry their
+([Gen/Automation.lean]) and the raw⟶method canon lemmas ([Gen/Notation.lean]) each carry their
 own inline `@[asimp_lemmas]`; the per-sort `up_b_v`/`upRen_b_v` unfolds are tagged by
 [Gen/Automation.lean]; the static σ-calculus laws are tagged in [Tactic/Asimp.lean].
 

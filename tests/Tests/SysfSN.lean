@@ -470,7 +470,7 @@ theorem interp_reducible : ∀ (A : ty) (ρ : Nat → tm → Prop),
 produces when pushing a renaming through a substitution). -/
 theorem interp_cr_ren {C : ty} {ρ : Nat → tm → Prop} (rC : reducible (interp C ρ))
     (ξty ξtm : Nat → Nat) {s : tm} (h : interp C ρ s) :
-    interp C ρ (subst_tm (funcomp ty.var_ty ξty) (funcomp tm.var_tm ξtm) s) := by
+    interp C ρ (s[funcomp ty.var_ty ξty; funcomp tm.var_tm ξtm]) := by
   rw [← rinstInst'_tm]; exact rC.cr_ren ξty ξtm h
 
 /-! ## 6. Church-style typing and the fundamental theorem -/

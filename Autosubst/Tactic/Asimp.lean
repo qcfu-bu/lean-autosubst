@@ -10,7 +10,7 @@ dedicated `asimp_lemmas` simp set (the tactic is named `asimp`, after Lean's `si
 The set is assembled from:
   • the **notation-native** σ-calculus lemmas — the per-constructor push laws, the fusion /
     identity / variable laws — stated over the typeclass-method / notation forms (`s[σ⃗]`, `s⟨ξ⃗⟩`,
-    `.:`, `>>`, `var_s`) and each carrying its own `@[asimp_lemmas]` ([Gen/Laws.lean]);
+    `.:`, `>>`, `var_s`) and each carrying its own `@[asimp_lemmas]` ([Gen/Automation.lean]);
     together with the **canon** lemmas ([Gen/Notation.lean]) that pull each construct toward the
     normal form — raw `subst_s`/`ren_s` ⟶ the `[σ]`/`⟨ξ⟩` method form (`substCanon{k}`/`renCanon{k}`),
     and the `ids`/`⇑` notations ⟶ the raw `var_s` ctor / `up_b_v` helper (`varIds`/`upLift`). So
