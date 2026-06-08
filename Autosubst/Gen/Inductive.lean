@@ -30,22 +30,22 @@ def congrName (s c : Name) : Name := Name.mkSimple s!"congr_{s}_{c}"
 
 /-- An argument head ⟶ its de Bruijn field type. Binders are passed for scope increments
 (scoped mode); they are erased in unscoped mode. `sc` selects the backend. -/
-partial def headToTerm (sc : Bool) (sig : Signature) (binders : List Binder) (h : ArgHead) :
-    CommandElabM Term := do
+partial def headToTermAt (sc : Bool) (sig : Signature) (st : String) (binders : List Binder)
+    (h : ArgHead) : CommandElabM Term := do
   match h with
   | .sort w args =>
     if !args.isEmpty then
-      let argTerms ← args.mapM (headToTerm sc sig [])
+      let argTerms ← args.mapM (headToTermAt sc sig st [])
       explicitApp (mkIdent w) argTerms
     else if !sc then
-      sortTyAt sc sig w "n"
+      sortTyAt sc sig w st
     else
       let vec := vecOf sig w
-      if vec.isEmpty then sortTyAt sc sig w "n"
+      if vec.isEmpty then sortTyAt sc sig w st
       else
-        let mut t ← sortTyAt false sig w "n"
+        let mut t ← sortTyAt false sig w st
         for u in vec do
-          t ← `($t $(← scopeBumped "n" binders u))
+          t ← `($t $(← scopeBumped st binders u))
         pure t
   | .ext e  => pure (mkIdent e)
   | .opaque stx => pure ⟨stx⟩
@@ -53,8 +53,13 @@ partial def headToTerm (sc : Bool) (sig : Signature) (binders : List Binder) (h 
       -- containers carry their elements unchanged structurally; element binders propagate.
       let mut t : Term := mkIdent f
       for a in args do
-        t ← `($t $(← headToTerm sc sig binders a))
+        t ← `($t $(← headToTermAt sc sig st binders a))
       pure t
+
+/-- An argument head ⟶ its de Bruijn field type, at the codomain scope `"n"` (the scope used when
+emitting the inductive's constructor types). -/
+partial def headToTerm (sc : Bool) (sig : Signature) (binders : List Binder) (h : ArgHead) :
+    CommandElabM Term := headToTermAt sc sig "n" binders h
 
 /-- The Lean type of a constructor parameter (`(p : nat)` ⟶ `Nat`); other declared types pass
 through. Variadic-binder counts are the only parameters in practice, so this is always `Nat`. -/

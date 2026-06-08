@@ -18,8 +18,10 @@ the notation `f >> g` applies `f` first, then `g`. -/
 @[reducible] def funcomp {X Y Z : Sort _} (g : Y → Z) (f : X → Y) : X → Z :=
   fun x => g (f x)
 
-/-- Forward composition notation: `f >> g` applies `f` first, then `g`. -/
-scoped infixr:80 " >> " => fun f g => funcomp g f
+/-- Forward composition notation: `f >> g` applies `f` first, then `g`. Higher parser priority than
+core `>>` (`HAndThen`/seq) so composition is chosen for function arguments without an ambiguity
+error; monadic `>>` still applies where `funcomp` does not typecheck. -/
+scoped infixr:80 (priority := high) " >> " => fun f g => funcomp g f
 
 theorem funcomp_assoc {W X Y Z : Sort _} (g : Y → Z) (f : X → Y) (h : W → X) :
     funcomp g (funcomp f h) = funcomp (funcomp g f) h := rfl

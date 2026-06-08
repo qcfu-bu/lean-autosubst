@@ -1,9 +1,17 @@
 /-
-# Phase 6 — Automation generation (`@[asimp]` registration).
+# Phase 6 — Automation generation (simp-set registration).
 
-Emits `attribute [asimp] …` commands that tag each signature's generated clean lemmas and
-`up_*`/`upRen_*` functions into the `asimp` simp set, mirroring the reference `asimpl'` rewrite
-list + `unfold`s (see [Tactic/Asimp.lean]).
+Emits the `attribute […]` commands that register a signature's generated lemmas into the tactic
+simp sets ([Tactic/Asimp.lean] / [Tactic/Attr.lean]):
+
+* the per-sort lifting helpers `up_b_v`/`upRen_b_v` (and the variadic `up_list_b_v`/`upRen_list_b_v`)
+  into `asimp_lemmas` **and** `auto_unfold_lemmas` — so `asimp`/`auto_unfold` unfold them, mirroring
+  the reference `asimpl`'s `unfold up_*`;
+* the raw ren⇒subst bridge `rinstInst'_s`/`rinstInst_s` into `substify_lemmas` (forward) and
+  `renamify_lemmas` (reversed) — the `substify`/`renamify` split.
+
+The σ-calculus rewrite set itself is generated in method/notation form, under its canonical names, by
+[Gen/Laws.lean] (each lemma carries its own inline `@[asimp_lemmas]`); no raw op is tagged here.
 -/
 import Lean
 import Autosubst.Gen.Lemmas
@@ -16,7 +24,7 @@ namespace Autosubst.Gen
 open Autosubst.IR
 
 /-- `attribute [asimp] …` commands registering the tactic-facing lemmas of `sig`. -/
-def genAutomationCommands (sc : Bool) (sig : Signature) : CommandElabM (Array (TSyntax `command)) := do
+def genAutomationCommands (sig : Signature) : CommandElabM (Array (TSyntax `command)) := do
   let opens := openSorts sig
   let mut out : Array (TSyntax `command) := #[]
   -- unfold the lifting functions (Coq's `unfold up_* upRen_* up_list_* upRen_list_*`)
@@ -33,41 +41,24 @@ def genAutomationCommands (sc : Bool) (sig : Signature) : CommandElabM (Array (T
     out := out.push (← `(command| attribute [asimp_lemmas] $ups*))
     -- the same lifting helpers back the standalone `auto_unfold` tactic
     out := out.push (← `(command| attribute [auto_unfold_lemmas] $ups*))
-  -- per-sort fusion / identity / variable lemmas (the `asimpl'` rewrite list)
+  -- per-sort `substify`/`renamify` registration. The σ-calculus rewrite set itself (push through
+  -- constructors, fusion, identity, variable laws) is generated in **notation/typeclass-method form**
+  -- under its canonical names by `Gen/Laws.lean`, where each lemma carries its own
+  -- `@[asimp_lemmas]` (and the raw⟶method canon bridges are tagged in `Gen/Notation.lean`). So
+  -- `asimp` output stays in notation — no raw `subst_s`/`ren_s` op is ever tagged into the set here.
+  -- The `up_b_v` unfold (the `ups` block above) and `rinstInst` (below) remain, matching the Coq
+  -- reference's `asimpl` (`unfold up_*`) and the `substify`/`renamify` split.
   for comp in sig.components do
     for si in substSortsOf sig comp do
       let s := si.name
-      -- `subst_s`/`ren_s` themselves (their generated equation lemmas) so `asimp` pushes a
-      -- substitution/renaming through constructors, not only the σ-calculus fusion laws.
-      let mut names : Array Ident := #[mkIdent (substName s), mkIdent (renName s),
-        mkIdent (renRenName s), mkIdent (renSubstName s),
-        mkIdent (substRenName s), mkIdent (substSubstName s),
-        mkIdent (renRenName' s), mkIdent (renSubstName' s),
-        mkIdent (substRenName' s), mkIdent (substSubstName' s),
-        mkIdent (instIdPName s), mkIdent (rinstIdPName s),
-        mkIdent (instIdName s), mkIdent (rinstIdName s)]
-      if si.isOpen then
-        names := names ++ #[mkIdent (varLName s), mkIdent (varLRenName s),
-          mkIdent (varLPName s), mkIdent (varLRenPName s)]
-      out := out.push (← `(command| attribute [asimp_lemmas] $names*))
-      -- `substify` rewrites ren ⇒ subst via `rinstInst'_s`; `renamify` is the same lemma reversed
-      -- (subst (var ∘ ξ) ⇒ ren), tagged with `←` into its own set.
-      out := out.push (← `(command| attribute [substify_lemmas] $(mkIdent (rinstInstPName s))))
-      out := out.push (← `(command| attribute [renamify_lemmas ←] $(mkIdent (rinstInstPName s))))
-      -- Function-level (unapplied) ren⇒subst, mirroring Coq's `rinstInst'Fun`. Lets `substify`/
-      -- `renamify` convert a bare `ren_s ξ` / `subst_s (var ∘ ξ)` sitting as a `funcomp` argument
-      -- (where the applied `rinstInst'_s` cannot fire), keeping the two representations confluent.
-      if si.isOpen then
-        let pbs ← sigImplicitBinders sig
-        let funName := mkIdent (Name.mkSimple s!"rinstInstFun'_{s}")
-        let xiTy ← mapTy sc sig true s "m" "n"
-        out := out.push (← `(command|
-          theorem $funName $pbs* (ξ : $xiTy) :
-            $(mkIdent (renName s)) ξ
-              = $(mkIdent (substName s)) ($(mkIdent ``Autosubst.funcomp) $(mkIdent (s ++ varName s)) ξ) :=
-            funext ($(mkIdent (rinstInstPName s)) ξ)))
-        out := out.push (← `(command| attribute [substify_lemmas] $funName))
-        out := out.push (← `(command| attribute [renamify_lemmas ←] $funName))
+      -- `substify` rewrites ren ⇒ subst; `renamify` is the reverse (subst (var ∘ ξ) ⇒ ren). Tag
+      -- BOTH the *applied* form (`rinstInst'_s`, fires on `ren_s ξ⃗ t`) and the *function-level*
+      -- form (`rinstInst_s`, fires on an unapplied `ren_s ξ⃗` sitting as a `funcomp` argument). These
+      -- are the raw-op ren⇒subst bridge generated by `genRinstInstWrappers` ([Gen/Lemmas.lean]).
+      -- NOTE: the `renamify_lemmas ←` below uses the *standalone* `attribute … ←` command form, which
+      -- correctly reverses orientation — unlike an inline `@[set ←]`, which does not (see Tactic/Attr).
+      out := out.push (← `(command| attribute [substify_lemmas] $(mkIdent (rinstInstPName s)) $(mkIdent (rinstInstWName s))))
+      out := out.push (← `(command| attribute [renamify_lemmas ←] $(mkIdent (rinstInstPName s)) $(mkIdent (rinstInstWName s))))
   return out
 
 end Autosubst.Gen

@@ -6,9 +6,18 @@ that declares it).
 
 The set is named `asimp_lemmas`, **distinct** from the `asimp` tactic: if they shared a name,
 `open`ing the tactic's namespace (or both living at root) would shadow the set name inside
-`simp only [asimp]` and silently empty it. The generator ([Gen/Automation.lean]) tags each
-signature's clean lemmas into this set; the static σ-calculus laws are tagged in
-[Tactic/Asimp.lean]. -/
+`simp only [asimp]` and silently empty it. The notation-native σ-calculus lemmas
+([Gen/Laws.lean]) and the raw⟶method canon lemmas ([Gen/Notation.lean]) each carry their
+own inline `@[asimp_lemmas]`; the per-sort `up_b_v`/`upRen_b_v` unfolds are tagged by
+[Gen/Automation.lean]; the static σ-calculus laws are tagged in [Tactic/Asimp.lean].
+
+**Orientation gotcha.** An *inline* `@[asimp_lemmas ←]` on a declaration does **not** reverse the
+rewrite for this custom (`register_simp_attr`) set — it tags the lemma *forward* regardless. So
+every lemma fed into `asimp_lemmas` is stated in the orientation it should rewrite in (e.g. the
+`substCanon`/`renCanon` lemmas state `raw = method` and are tagged plainly forward, so they rewrite
+raw ⟶ method; `varIds`/`upLift` are likewise stated in their own rewrite direction).
+The standalone `attribute [set ←] foo` *command* form does honour `←` correctly — that is how
+`renamify_lemmas ←` is applied below ([Gen/Automation.lean]). -/
 register_simp_attr asimp_lemmas
 
 /-- The simp set backing `substify` (rewrites renamings into substitutions via `rinstInst'`).

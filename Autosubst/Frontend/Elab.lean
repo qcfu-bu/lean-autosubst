@@ -14,6 +14,7 @@ import Autosubst.Gen.Subst
 import Autosubst.Gen.Lemmas
 import Autosubst.Gen.Automation
 import Autosubst.Gen.Notation
+import Autosubst.Gen.Laws
 import Autosubst.Tactic.Asimp
 
 open Lean Elab Command
@@ -268,10 +269,13 @@ def elabAutosubst : CommandElab := fun stx => do
     for cmd in (← Autosubst.Gen.genLemmaCommands shapes isScoped sig) do
       elabCommand cmd
     -- Phase 6: register the tactic-facing lemmas into the `@[asimp]` simp set.
-    for cmd in (← Autosubst.Gen.genAutomationCommands isScoped sig) do
+    for cmd in (← Autosubst.Gen.genAutomationCommands sig) do
       elabCommand cmd
     -- Notation pass: per-sort `Subst*`/`Ren*`/`Var` instances backing the `s[σ]`/`s⟨ξ⟩`/`t..` notations.
     for cmd in (← Autosubst.Gen.genNotationCommands isScoped sig) do
+      elabCommand cmd
+    -- Notation-native `asimp` lemmas (push/fusion/…) stated over the typeclass-method forms.
+    for cmd in (← Autosubst.Gen.genLawCommands shapes isScoped sig) do
       elabCommand cmd
 
 end Autosubst.Frontend

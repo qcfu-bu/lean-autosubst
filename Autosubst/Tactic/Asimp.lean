@@ -8,14 +8,26 @@ dedicated `asimp_lemmas` simp set (the tactic is named `asimp`, after Lean's `si
 `simpl`; the set is named separately so the tactic name can't shadow it — see [Tactic/Attr.lean]).
 
 The set is assembled from:
-  • the generated clean lemmas — fusion (`renRen`/`renSubst`/`substRen`/`substSubst`), identity
-    (`instId'`/`rinstId'`), and the variable laws (`varL`/`varLRen`) — tagged by the generator
-    ([Gen/Automation.lean]); mirrors the reference `asimpl'` rewrite list;
+  • the **notation-native** σ-calculus lemmas — the per-constructor push laws, the fusion /
+    identity / variable laws — stated over the typeclass-method / notation forms (`s[σ⃗]`, `s⟨ξ⃗⟩`,
+    `.:`, `>>`, `var_s`) and each carrying its own `@[asimp_lemmas]` ([Gen/Laws.lean]);
+    together with the **canon** lemmas ([Gen/Notation.lean]) that pull each construct toward the
+    normal form — raw `subst_s`/`ren_s` ⟶ the `[σ]`/`⟨ξ⟩` method form (`substCanon{k}`/`renCanon{k}`),
+    and the `ids`/`⇑` notations ⟶ the raw `var_s` ctor / `up_b_v` helper (`varIds`/`upLift`). So
+    `asimp` *output* keeps subst/ren applications in notation (variables as the raw `var_s` ctor),
+    mirroring Coq's `asimpl`;
   • the static σ-calculus laws below (the `scons` simplifications = Coq's `fsimpl`).
-`asimp` additionally unfolds `funcomp`/`scons`/`up_ren` (Coq's `unfold … ; cbn`).
+`asimp` additionally unfolds the per-sort lifting helpers `up_b_v`/`upRen_b_v` (tagged into the set
+by [Gen/Automation.lean]) and the generic `up_ren` (Coq's `unfold up_* ; cbn`); `funcomp`/`scons`
+are normalized algebraically by the static laws rather than unfolded.
 
 `rinst_inst` (ren ⇒ subst) is deliberately *not* in the set — like Coq, that conversion belongs
 to `substify`/`renamify`, keeping `asimp` from collapsing renamings into substitutions.
+
+`asimp` is `simp only [asimp_lemmas]`, so on a term already in σ-normal form (nothing to rewrite)
+it fails with "simp made no progress" — matching `simp only`. That is intentional: a bare `asimp`
+reports when it had no effect. The `substify`/`renamify` wrappers, which must tolerate an
+already-normal goal, call it as `try asimp` (see below).
 -/
 import Lean
 import Autosubst.Prelude.Unscoped
