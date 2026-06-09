@@ -3,8 +3,8 @@
 [![Lean](https://img.shields.io/badge/Lean-v4.30.0-blue)](lean-toolchain)
 
 A Lean 4 port of [Autosubst 2](https://github.com/uds-psl/autosubst2) for de Bruijn substitution
-boilerplate. You write a HOAS-style specification of your syntax in a small DSL inside your `.lean`
-file. During elaboration, `autosubst` creates kernel-checked Lean declarations: the de Bruijn
+boilerplate. Specify the syntax of your language using a HOAS-style DSL inside a `.lean` file. 
+During elaboration, `autosubst` creates kernel-checked Lean declarations: the de Bruijn
 inductive types, renaming/substitution operations, equational lemmas, and the `asimp` simp set for
 substitution goals.
 
@@ -262,20 +262,20 @@ A purely additive, opt-in readability layer mirroring upstream Autosubst's notat
 `Autosubst.Notation` (unscoped) or `Autosubst.Scoped.Notation` (well-scoped) to bring them into
 scope:
 
-| notation     | meaning                          | desugars to                       |
-| ------------ | -------------------------------- | --------------------------------- |
-| `s[σ]`       | substitution application         | `subst_s σ s`                     |
-| `s[σ;τ]`     | parallel (two-map) substitution  | `subst_s σ τ s`                   |
-| `s⟨ξ⟩`       | renaming application             | `ren_s ξ s`                       |
-| `s⟨ξ;ζ⟩`     | parallel (two-map) renaming      | `ren_s ξ ζ s`                     |
-| `[σ]`, `⟨ξ⟩` | the same as functions            | `subst_s σ`, `ren_s ξ`            |
-| `[a, b, c/]` | explicit finite substitution     | `a .: b .: c .: var_s`            |
-| `s[a, b, c/]`| applied to `s`                   | `subst_s (a .: b .: c .: var_s) s`|
-| `t..`        | single-point β-substitution      | `t .: var_s` (= `[t/]`)           |
-| `↑`          | the shift renaming               | `shift`                           |
-| `⇑σ`         | lift under one binder (see below)| `up_b_v σ`                        |
-| `f >> g`     | forward composition (always on)  | `funcomp g f`                     |
-| `s .: σ`     | cons onto a map (always on)      | `scons s σ`                       |
+| notation      | meaning                           | desugars to                        |
+| ------------- | --------------------------------- | ---------------------------------- |
+| `s[σ]`        | substitution application          | `subst_s σ s`                      |
+| `s[σ;τ]`      | parallel (two-map) substitution   | `subst_s σ τ s`                    |
+| `s⟨ξ⟩`        | renaming application              | `ren_s ξ s`                        |
+| `s⟨ξ;ζ⟩`      | parallel (two-map) renaming       | `ren_s ξ ζ s`                      |
+| `[σ]`, `⟨ξ⟩`  | the same as functions             | `subst_s σ`, `ren_s ξ`             |
+| `[a, b, c/]`  | explicit finite substitution      | `a .: b .: c .: var_s`             |
+| `s[a, b, c/]` | applied to `s`                    | `subst_s (a .: b .: c .: var_s) s` |
+| `t..`         | single-point β-substitution       | `t .: var_s` (= `[t/]`)            |
+| `↑`           | the shift renaming                | `shift`                            |
+| `⇑σ`          | lift under one binder (see below) | `up_b_v σ`                         |
+| `f >> g`      | forward composition (always on)   | `funcomp g f`                      |
+| `s .: σ`      | cons onto a map (always on)       | `scons s σ`                        |
 
 The `[a, b, c/]` form (the `/` marks it a *substitution*, distinct from a list literal `[a, b, c]`)
 is the explicit finite substitution: a prefix of terms with an identity tail. The `s[t/]` form is
@@ -319,18 +319,18 @@ reference signature from the upstream
 typechecks, is axiom-clean (`{propext, Quot.sound}` only; no `sorryAx`/`Classical.choice`), and
 that representative `by asimp` goals close.
 
-| signature                        | feature exercised                                            |  unscoped   |  well-scoped   |
-| -------------------------------- | ------------------------------------------------------------ | :---------: | :------------: |
-| `stlc` / `stlc-unicode`          | single sort; unicode names                                   |      ✅      |       ✅        |
-| `sysf`                           | multi-sort, hierarchical; two parallel maps                  |      ✅      |       ✅        |
-| `fcbv`                           | mutual sorts (`tm ↔ vl`), cross-sort binders                 |      ✅      |       ✅        |
-| `pi`                             | pure name sort + nullary constructor                         |      ✅      |       ✅        |
-| `num` / `prelude`                | external/foreign leaf types (`Nat`, `Bool`)                  |      ✅      |       ✅        |
-| `logrel_coq`                     | `Option` functor + binder-into-`Option`                      |      ✅      |   ⛔ kernel¹    |
-| `variadic` (container part)      | `List` functor                                               |      ✅      |   ⛔ kernel¹    |
-| `variadic` (binder `bind ⟨p,t⟩`) | variadic binding (runtime `p`)                               | ⛔ unported² | ✅ single-sort² |
-| (user)                           | own container, recognised on demand (a `Tree`)              |     ✅³      |   ⛔ kernel¹    |
-| `parameterized`                  | sort params, explicit sort refs, `opaque`, polynomial containers |      ✅⁴     |   ⛔ kernel¹    |
+| signature                        | feature exercised                                                |  unscoped   |  well-scoped   |
+| -------------------------------- | ---------------------------------------------------------------- | :---------: | :------------: |
+| `stlc` / `stlc-unicode`          | single sort; unicode names                                       |      ✅      |       ✅        |
+| `sysf`                           | multi-sort, hierarchical; two parallel maps                      |      ✅      |       ✅        |
+| `fcbv`                           | mutual sorts (`tm ↔ vl`), cross-sort binders                     |      ✅      |       ✅        |
+| `pi`                             | pure name sort + nullary constructor                             |      ✅      |       ✅        |
+| `num` / `prelude`                | external/foreign leaf types (`Nat`, `Bool`)                      |      ✅      |       ✅        |
+| `logrel_coq`                     | `Option` functor + binder-into-`Option`                          |      ✅      |   ⛔ kernel¹    |
+| `variadic` (container part)      | `List` functor                                                   |      ✅      |   ⛔ kernel¹    |
+| `variadic` (binder `bind ⟨p,t⟩`) | variadic binding (runtime `p`)                                   | ⛔ unported² | ✅ single-sort² |
+| (user)                           | own container, recognised on demand (a `Tree`)                   |     ✅³      |   ⛔ kernel¹    |
+| `parameterized`                  | sort params, explicit sort refs, `opaque`, polynomial containers |     ✅⁴      |   ⛔ kernel¹    |
 
 **¹** Nesting a container over a *scope-indexed* inductive is rejected by the Lean 4 kernel
 (`invalid nested inductive datatype … parameters cannot contain local variables`). This is a
