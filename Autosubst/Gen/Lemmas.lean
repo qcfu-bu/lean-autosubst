@@ -136,7 +136,7 @@ def recLemmaParams (sc : Bool) (sig : Signature) (fam : Family) (vec : List Sort
 
 /-- The container-helper lemma name for `fam` at sort `s` and container head: `<lemma>_<shape>`. -/
 def helperLemmaName (containers : Containers) (fam : Family) (s : SortId) (head : IR.ArgHead) : Name :=
-  Name.mkSimple s!"{fam.lemmaName s}_{shapeSuffix containers head}"
+  Name.mkSimple s!"{fam.lemmaName s}_{shapeSuffix containers s head}"
 
 /-- The congruence lemma name for a (real Lean) container constructor, e.g. `Tree.node` ↦
 `congrC_Tree_node`. Used by the generic container-helper lemmas (the analogue of `cons_congr`). -/
@@ -151,7 +151,11 @@ def genCtorCongr (ctorName : Name) (arity : Nat) : CommandElabM (TSyntax `comman
     (Array.range arity).map (fun i => mkIdent (Name.mkSimple s!"{pfx}{i}"))
   let as := idents "a"; let bs := idents "b"; let hs := idents "h"
   let cI := mkIdent ctorName
-  `(command| theorem $(mkIdent (ctorCongrName ctorName)) $[($hs : $as = $bs)]* :
+  -- The field variables `aᵢ`/`bᵢ` and their element types are auto-bound, so this is the one
+  -- generated lemma that needs `autoImplicit`; pin it on locally so a user file with
+  -- `set_option autoImplicit false` (mathlib's default) does not break every container congruence.
+  `(command| set_option autoImplicit true in
+    theorem $(mkIdent (ctorCongrName ctorName)) $[($hs : $as = $bs)]* :
       $cI $as* = $cI $bs* := by subst_vars; rfl)
 
 /-- The sub-proof for one constructor position of a recursive lemma. -/
@@ -238,9 +242,9 @@ partial def genHeadProof (containers : Containers) (sc : Bool) (fam : Family) (s
         let pb ← genHeadProof containers sc fam sig s vecS binders b (← `($x.2))
         `($(mkIdent ``Prod.ext) $pa $pb)
       | _ => `(rfl)
-    else match recContainerWord containers f with
-      | some _ => applyLemma (helperLemmaName containers fam s head) vecS x
-      | none => `(rfl)
+    else if (recContainerWord containers f).isSome && headMentionsSort head then
+      applyLemma (helperLemmaName containers fam s head) vecS x
+    else `(rfl)
   | .ext _ | .opaque _ => `(rfl)
 
 /-- The proof of one container-constructor argument of `ArgKind` `k` (the lemma-side analogue of
@@ -291,8 +295,12 @@ def genHelperLemma (containers : Containers) (sc : Bool) (fam : Family) (sig : S
             let proofs ← (xs.zip kinds).mapM fun (x, k) =>
               genHelperProofArg containers sc fam sig s vecS args tailProof k x
             let term ← appAll (mkIdent (ctorCongrName cName)) proofs.toList
+            -- `<;> exact` (not `; exact`): when every field proof is `rfl` — e.g. the container's
+            -- elements are a *closed* sort with no substitution — `simp only` already closes the goal
+            -- and a bare `exact` would report "no goals"; `<;>` applies `exact` to each remaining goal
+            -- (zero of them ⇒ no-op), while still discharging the genuine non-trivial case.
             `(Lean.Parser.Term.matchAltExpr|
-              | $(mkIdent cName) $xs* => by simp only [$renH:ident, $substH:ident]; exact $term)
+              | $(mkIdent cName) $xs* => by simp only [$renH:ident, $substH:ident] <;> exact $term)
         arms := arms.push arm
       `(command| theorem $(mkIdent nm) $pbs* $params* : ∀ ($xsId : $ty), $lhsL = $rhsL $arms:matchAlt*)
   | _ => `(command| theorem $(mkIdent nm) $pbs* $params* : ∀ ($xsId : $ty), $lhsL = $rhsL := fun _ => rfl)
@@ -871,8 +879,11 @@ def genLemmaCommands (containers : Containers) (sc : Bool) (sig : Signature) :
         if let some shape := shapeOf containers f then
           for (cName, kinds) in shape do
             -- leaf ctors (nullary/all-inert) use a `rfl` arm, not `congrC`, so skip their congruence
-            -- (which for a nullary ctor would also have an un-inferable element type).
-            unless seenCtors.contains cName || kinds.all (· == ArgKind.inert) do
+            -- (which for a nullary ctor would also have an un-inferable element type). Also skip when
+            -- the (signature-independent) congruence already exists — a prior `autosubst` command in
+            -- the same namespace using the same container already emitted it; re-declaring would error.
+            unless seenCtors.contains cName || kinds.all (· == ArgKind.inert)
+                || (← getEnv).contains ((← getScope).currNamespace ++ ctorCongrName cName) do
               seenCtors := cName :: seenCtors
               cmds := cmds.push (← genCtorCongr cName kinds.size)
   cmds := cmds ++ (← ups genUpId) ++ (← vups genUpIdList) ++ (← recLemmas famIdSubst)

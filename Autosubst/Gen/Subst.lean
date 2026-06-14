@@ -65,7 +65,11 @@ inline, not recursive). User containers contribute their name. -/
 def recContainerWord (containers : Containers) : Name → Option String
   | `List => some "list"
   | `Option => some "option"
-  | f => if f != `Prod && (shapeOf containers f).isSome then some f.getString! else none
+  | f => if f != `Prod && (shapeOf containers f).isSome then
+      -- Full dotted name (`.`→`_`), not just the last component, so two distinct containers sharing
+      -- a final name component (`A.Box`/`B.Box`) get distinct helper names instead of colliding.
+      some (f.toString.replace "." "_")
+    else none
 
 /-- The binary product container — handled inline by projections, no helper. -/
 def isProdHead (f : Name) : Bool := f == `Prod
@@ -94,11 +98,14 @@ partial def headNameWord (containers : Containers) : IR.ArgHead → String
       let parts := args.map (headNameWord containers)
       if parts.isEmpty then base else s!"{base}_{String.intercalate "_" parts}"
 
-/-- A compact suffix encoding a head's container shape for helper naming. Legacy unary names stay
-short (`List tm`→"list", `Tree tm`→"Tree", `PBox Srt tm`→"PBox"). Containers with multiple active
-or non-final active parameters spell out their arguments (`PairBox Ty tm`→"PairBox_Ty_tm"). -/
-partial def shapeSuffix (containers : Containers) : IR.ArgHead → String
-  | .sort _ _ => ""
+/-- A compact suffix encoding a head's container shape for helper naming, relative to the enclosing
+sort `encl`. The element matching `encl` (the common `List tm`/`Tree tm`/`PBox Srt tm` case) stays
+implicit so legacy names stay short; an element that is a *different* declared sort is spelled out
+(`List ty` in sort `tm`→"list_ty") so two instantiations of one container in the same sort no longer
+collide. Containers with multiple active or non-final active parameters spell out positionally
+(`PairBox Ty tm`→"PairBox_Ty_tm"). -/
+partial def shapeSuffix (containers : Containers) (encl : SortId) : IR.ArgHead → String
+  | .sort s _ => if s == encl then "" else s.getString!
   | .ext _ | .opaque _ => "ext"
   | .functor f args =>
     match recContainerWord containers f with
@@ -112,20 +119,20 @@ partial def shapeSuffix (containers : Containers) : IR.ArgHead → String
         out
       if active == [args.length - 1] then
         match args.getLast? with
-        | some sub => let s := shapeSuffix containers sub; if s.isEmpty then w else s!"{w}_{s}"
+        | some sub => let s := shapeSuffix containers encl sub; if s.isEmpty then w else s!"{w}_{s}"
         | none => w
       else
         let parts := args.map (headNameWord containers)
         if parts.isEmpty then w else s!"{w}_{String.intercalate "_" parts}"
     | none =>
       if isProdHead f then
-        let parts := (args.map (shapeSuffix containers)).filter (· ≠ "")
+        let parts := (args.map (shapeSuffix containers encl)).filter (· ≠ "")
         if parts.isEmpty then "prod" else "prod_" ++ String.intercalate "_" parts
       else "ext"
 
 /-- Helper op name for a recursive-container head in sort `s`: `<op>_<s>_<shape>`. -/
 def helperOpName (containers : Containers) (forRen : Bool) (s : SortId) (head : IR.ArgHead) : Name :=
-  Name.mkSimple s!"{opName forRen s}_{shapeSuffix containers head}"
+  Name.mkSimple s!"{opName forRen s}_{shapeSuffix containers s head}"
 
 /-- Map parameter name for component `v`: `xi_v` (renaming) or `sigma_v` (substitution). -/
 def mapParam (forRen : Bool) (v : SortId) : Name := Name.mkSimple s!"{if forRen then "xi" else "sigma"}_{v}"
@@ -245,12 +252,14 @@ partial def genHeadValue (containers : Containers) (sig : Signature) (forRen : B
         let vb ← genHeadValue containers sig forRen s vecS binders b (← `($x.2))
         `(($va, $vb))
       | _ => return x
-    else match recContainerWord containers f with
-      | some _ =>
+    -- A recognised container with a declared sort inside gets a mutual structural helper; one with
+    -- no sort inside (`List Nat`, `MyBox Nat`) carries substitution nowhere — leave it unchanged
+    -- (mirroring `collectHelperHeads`, which only emits a helper when `args.any headMentionsSort`).
+    else if (recContainerWord containers f).isSome && headMentionsSort head then do
         let mut call : Term := mkIdent (helperOpName containers forRen s head)
         for v in vecS do call ← `($call $(← mapUnder forRen binders v))
         `($call $x)
-      | none => return x
+    else return x
   | .ext _ | .opaque _ => return x
 
 /-- Build the field expression for one constructor position of sort `s`. -/

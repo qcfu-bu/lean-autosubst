@@ -95,28 +95,40 @@ def liftMapMethod (forRen : Bool) (binders : List Binder) (u : SortId) (m : Term
 
 /-! ## Push lemmas (`(c …)[σ⃗] = c …`, folded, method form) -/
 
-/-- The pushed form of one constructor argument at `pos`, applied to the field variable `x`. A
-substitutable sort position becomes `x[lifted σ⃗]` (method head); a recognised container becomes its
-helper op over the lifted maps; an `ext`/`opaque`/non-substitutable position is unchanged. -/
-def pushArgTerm (containers : Containers) (forRen : Bool) (sig : Signature) (s : SortId)
-    (pfx : String) (pos : IR.Position) (x : Term) : CommandElabM Term := do
-  match pos.head with
+/-- The pushed form of one constructor-argument *head*, applied to the field variable `x`. A
+substitutable sort position becomes `x[lifted σ⃗]` (method head); a recursive container (`List`,
+`Option`, a user inductive) becomes its helper op over the lifted maps; the binary `Prod` is pushed
+inline (`(push x.1, push x.2)`) exactly as `genHeadValue`/`genHeadProof` handle it — there is no
+`Prod` helper; an `ext`/`opaque`/no-sort-inside position is unchanged. -/
+partial def pushHeadTerm (containers : Containers) (forRen : Bool) (sig : Signature) (s : SortId)
+    (pfx : String) (binders : List Binder) (head : IR.ArgHead) (x : Term) : CommandElabM Term := do
+  match head with
   | .sort w _ =>
     let vecW := vecOf sig w
     if vecW.isEmpty then pure x
     else do
-      let maps ← vecW.mapM fun u => liftMapMethod forRen pos.binders u (idTm (mapIdent pfx u))
+      let maps ← vecW.mapM fun u => liftMapMethod forRen binders u (idTm (mapIdent pfx u))
       methodOpApp forRen sig w maps x
   | .functor f args =>
-    -- recognised container ⇒ map via its helper op over `s`'s vector (raw helper: no notation for
-    -- "map subst over a container"); an all-foreign functor carries substitution nowhere ⇒ rfl.
-    if (args.flatMap ArgHead.argSorts).isEmpty then pure x
-    else if (recContainerWord containers f).isSome || isProdHead f then do
+    if isProdHead f then
+      match args with
+      | [a, b] =>
+        let va ← pushHeadTerm containers forRen sig s pfx binders a (← `($x.1))
+        let vb ← pushHeadTerm containers forRen sig s pfx binders b (← `($x.2))
+        `(($va, $vb))
+      | _ => pure x
+    else if (args.flatMap ArgHead.argSorts).isEmpty then pure x
+    else if (recContainerWord containers f).isSome then do
       let vecS := vecOf sig s
-      let maps ← vecS.mapM fun u => liftMapMethod forRen pos.binders u (idTm (mapIdent pfx u))
-      appAll (mkIdent (helperOpName containers forRen s pos.head)) (maps ++ [x])
+      let maps ← vecS.mapM fun u => liftMapMethod forRen binders u (idTm (mapIdent pfx u))
+      appAll (mkIdent (helperOpName containers forRen s head)) (maps ++ [x])
     else pure x
   | .ext _ | .opaque _ => pure x
+
+/-- The pushed form of one constructor argument at `pos`, applied to the field variable `x`. -/
+def pushArgTerm (containers : Containers) (forRen : Bool) (sig : Signature) (s : SortId)
+    (pfx : String) (pos : IR.Position) (x : Term) : CommandElabM Term :=
+  pushHeadTerm containers forRen sig s pfx pos.binders pos.head x
 
 /-- The push lemmas for sort `s`: one per constructor (and the variable law), for both families.
 `(c x⃗)[σ⃗] = c (push x⃗)` — proved by `rfl` (the method heads are defeq to the raw ops, on which

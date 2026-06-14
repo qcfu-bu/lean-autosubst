@@ -252,6 +252,27 @@ def elabAutosubst : CommandElab := fun stx => do
   let shapes : Autosubst.Gen.Containers ← heads.eraseDups.filterMapM fun f => do
     return (← liftTermElabM (Autosubst.Gen.containerShape? f)).map (f, ·)
   let names := shapes.map (·.1) ++ (if heads.contains `Prod then [`Prod] else [])
+  -- Validate that every recognised container head is fully applied to its type parameters. A
+  -- partially- or over-applied head (`P2 tm`, `MyBox tm tm`, `Prod tm`) would otherwise die in raw
+  -- elaboration errors at the command position with no hint about arity.
+  let containerNumParams (f : Name) : CommandElabM (Option Nat) := do
+    let env ← getEnv
+    let resolved := ((← liftTermElabM (Lean.resolveGlobalName f)).findSome? fun (n, fields) =>
+      if fields.isEmpty then match env.find? n with | some (.inductInfo _) => some n | _ => none
+      else none).getD f
+    match env.find? resolved with
+    | some (.inductInfo ii) => return some ii.numParams
+    | _ => return none
+  for sd in spec.sorts do
+    for c in sd.ctors do
+      for pos in c.positions do
+        for (f, n) in pos.head.functorApps do
+          if names.contains f then
+            if let some np ← containerNumParams f then
+              unless n == np do
+                throwError "Container head '{f}' in constructor '{c.name}' of sort '{sd.name}' is \
+                  applied to {n} argument(s), but '{f}' takes {np} type parameter(s); a container \
+                  must be fully applied to its parameters."
   match Signature.analyze spec isScoped names with
   | .error e => throwError e
   | .ok sig =>

@@ -75,6 +75,13 @@ partial def ArgHead.functorHeads : ArgHead → List SortId
   | .ext _ | .opaque _ => []
   | .functor f args => f :: args.flatMap ArgHead.functorHeads
 
+/-- Every functor/container head paired with the number of arguments it is applied to (recursively)
+— used to validate that a recognised container head is fully applied to its type parameters. -/
+partial def ArgHead.functorApps : ArgHead → List (Name × Nat)
+  | .sort _ args => args.flatMap ArgHead.functorApps
+  | .ext _ | .opaque _ => []
+  | .functor f args => (f, args.length) :: args.flatMap ArgHead.functorApps
+
 /-- A constructor argument: a (possibly empty) list of binders wrapping a head type.
 `bind a, b in h` ⇒ `{ binders := [a, b], head := h }`. -/
 structure Position where

@@ -59,6 +59,30 @@ partial def badFunctor (containers : List Name) (declared : List SortId) : ArgHe
       some f
     else args.findSome? (badFunctor containers declared)
 
+/-- In well-scoped mode, a container head wrapping a *scope-indexed* sort (one whose substitution
+vector is non-empty, so its de Bruijn inductive carries a `Fin`/`Nat` scope index) lowers to a
+kernel-rejected nested inductive (`invalid nested inductive datatype ... parameters cannot contain
+local variables`). Detect it so the analyzer reports a clean decline instead — mirroring the
+unscoped-variadic decline. `indexed` decides whether a declared sort is scope-indexed. -/
+partial def scopedContainerOverIndexed (containers : List Name) (indexed : SortId → Bool) :
+    ArgHead → Option Name
+  | .sort _ args => args.findSome? (scopedContainerOverIndexed containers indexed)
+  | .ext _ | .opaque _ => none
+  | .functor f args =>
+    if containers.contains f && (args.flatMap ArgHead.argSorts).any indexed then some f
+    else args.findSome? (scopedContainerOverIndexed containers indexed)
+
+/-- The first declared sort head applied to *more* arguments than it has declared parameters — a
+declared sort misused as a container head (`ty tm`, where `ty` takes no parameters). Applying a sort
+to at most its parameter count is fine (params are usually threaded implicitly, so bare references
+are the norm); over-applying it can only be a mistake. -/
+partial def overAppliedSort (paramCount : SortId → Nat) : ArgHead → Option (Name × Nat × Nat)
+  | .sort s args =>
+    if args.length > paramCount s then some (s, args.length, paramCount s)
+    else args.findSome? (overAppliedSort paramCount)
+  | .functor _ args => args.findSome? (overAppliedSort paramCount)
+  | .ext _ | .opaque _ => none
+
 /-- Direct successors of `t`: declared sorts referenced in `t`'s constructor argument heads. -/
 def directArgs (sp : Spec) (t : SortId) : List SortId :=
   match sp.sorts.find? (·.name == t) with
@@ -152,6 +176,15 @@ def analyze (sp : Spec) (sc : Bool := false) (containers : List Name := supporte
   -- type parameters — `List`/`Option`/a user `Tree`); a head wrapping a declared sort that is *not* one of these
   -- (a function-space "functor" like `fol`'s `cod`, a non-regular/nested or dependent type) cannot be
   -- threaded and is rejected here rather than lowered to undefined code.
+  -- (1d) reject a declared sort over-applied as a pseudo-container head (`ty tm`).
+  let paramCount (s : SortId) : Nat := (sp.sorts.find? (·.name == s)).map (·.params.length) |>.getD 0
+  for sd in sp.sorts do
+    for c in sd.ctors do
+      for pos in c.positions do
+        if let some (s, got, want) := overAppliedSort paramCount pos.head then
+          throw s!"Sort '{s}' is applied to {got} argument(s) in constructor '{c.name}' of sort \
+            '{sd.name}', but '{s}' declares only {want} parameter(s). A declared sort cannot be used \
+            as a container head; only `Prod` or an inductive regular in its type parameters can."
   for sd in sp.sorts do
     for c in sd.ctors do
       for pos in c.positions do
@@ -175,6 +208,19 @@ def analyze (sp : Spec) (sc : Bool := false) (containers : List Name := supporte
             throw s!"Vacuous binding of '{x}' in constructor '{c.name}' of sort '{sd.name}'"
   let openSorts := openSet.eraseDups
   let isOpen (t : SortId) : Bool := openSorts.contains t
+  -- (2a) reject containers over a scope-indexed sort in **well-scoped** mode (kernel-infeasible
+  -- nested inductive). A container over a *closed* sort (empty substitution vector) is fine.
+  if sc then
+    let indexed (t : SortId) : Bool := (reachRefl succ t).any isOpen
+    for sd in sp.sorts do
+      for c in sd.ctors do
+        for pos in c.positions do
+          if let some f := scopedContainerOverIndexed containers indexed pos.head then
+            throw s!"Cannot thread substitution through container head '{f}' in constructor \
+              '{c.name}' of sort '{sd.name}': in well-scoped mode a container wrapping a \
+              scope-indexed sort lowers to a kernel-rejected nested inductive. Use unscoped mode \
+              for container positions over open sorts, or keep the container's elements in a closed \
+              (variable-free) sort."
   -- (2b) variadic binders are supported only for **single-open-sort** signatures (the reference
   -- `variadic.sig` shape): then the bound sort always coincides with the lone substitution
   -- component, so the `up_list_b_v` tower has `b = v`. Multi-open-sort variadic (cross-sort
