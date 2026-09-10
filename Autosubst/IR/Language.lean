@@ -12,6 +12,10 @@ Designed for **multi-sorting** and **nested containers** from the start (Scope Â
 - `Binder.vector` models the variadic `bind <p, s>` form.
 -/
 
+module
+
+public meta section
+
 open Lean
 
 namespace Autosubst.IR

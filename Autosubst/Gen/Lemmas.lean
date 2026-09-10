@@ -18,8 +18,13 @@ exception — the `Nat` `0`/`n+1` case split in the `up_*` helpers becomes `Fin.
 mode (`Fin.cases` reduces definitionally on `0`/`Fin.succ`). Scope variables are free
 identifiers Lean auto-binds (`autoImplicit`).
 -/
-import Lean
-import Autosubst.Gen.Subst
+
+module
+
+public import Lean
+public import Autosubst.Gen.Subst
+
+public meta section
 
 open Lean Elab Command
 

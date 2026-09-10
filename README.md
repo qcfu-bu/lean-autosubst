@@ -1,6 +1,6 @@
 # lean-autosubst
 
-[![Lean](https://img.shields.io/badge/Lean-v4.30.0-blue)](lean-toolchain)
+[![Lean](https://img.shields.io/badge/Lean-v4.34.0-rc2-blue)](lean-toolchain)
 
 A Lean 4 port of [Autosubst 2](https://github.com/uds-psl/autosubst2) for de Bruijn substitution
 boilerplate. Specify the syntax of your language using a HOAS-style DSL inside a `.lean` file. 
@@ -55,7 +55,7 @@ require «lean-autosubst» from git
 ```
 
 then `import Autosubst`. Your project's `lean-toolchain` must match the one pinned here
-([`leanprover/lean4:v4.30.0`](lean-toolchain)).
+([`leanprover/lean4:v4.34.0-rc2`](lean-toolchain)).
 
 ## The DSL
 

@@ -11,7 +11,12 @@ We show it in both backends: unscoped (`Nat`) and well-scoped (`Fin`, where the 
 visibly jumps by two: `tm n → tm (n+2) → tm n`). In each, the de Bruijn equation holds by `rfl`
 and the β / substitution-lemma bookkeeping clears with `asimp`.
 -/
-import Autosubst
+
+module
+
+public import Autosubst
+
+@[expose] public section
 
 open Autosubst
 

@@ -10,7 +10,12 @@ Primitives of the sigma calculus over `Nat` de Bruijn indices: `var_zero`, `shif
 We give the laws in both pointwise and funext-based extensional forms; the
 extensional forms are what the generated "clean" lemmas and `asimpl` consume.
 -/
-import Autosubst.Prelude.Core
+
+module
+
+public import Autosubst.Prelude.Core
+
+@[expose] public section
 
 namespace Autosubst
 

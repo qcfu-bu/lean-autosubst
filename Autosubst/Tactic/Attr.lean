@@ -1,4 +1,8 @@
-import Lean
+module
+
+public import Lean
+
+public meta section
 
 /-- The simp set backing the `asimp` tactic. Registered in its own module because a
 `register_simp_attr` attribute is only usable in modules that *import* this one (not the one
