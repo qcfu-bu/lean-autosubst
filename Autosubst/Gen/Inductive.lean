@@ -16,8 +16,13 @@ Two backends (plan.md §4), selected by `sc : Bool`:
 We emit *command syntax* and let Lean's own inductive elaborator do the work (`elabCommand`):
 de Bruijn syntax is strictly positive, so this is exactly the clean path.
 -/
-import Lean
-import Autosubst.Gen.Backend
+
+module
+
+public import Lean
+public import Autosubst.Gen.Backend
+
+public meta section
 
 open Lean Elab Command
 

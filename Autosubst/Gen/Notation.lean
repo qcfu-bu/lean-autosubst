@@ -26,9 +26,14 @@ reverse it for this custom set — see [Tactic/Attr.lean]). The opposite, *untag
 unfolding a notation form back to the raw op in a bespoke `simp only` (e.g. the SysfSN regression
 uses `renApp2_tm`).
 -/
-import Autosubst.Gen.Subst
-import Autosubst.Prelude.Notation
-import Autosubst.Tactic.Attr
+
+module
+
+public import Autosubst.Gen.Subst
+public import Autosubst.Prelude.Notation
+public import Autosubst.Tactic.Attr
+
+public meta section
 
 open Lean Elab Command
 

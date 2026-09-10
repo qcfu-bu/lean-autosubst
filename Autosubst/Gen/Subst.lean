@@ -14,10 +14,15 @@ Emission order respects dependencies: all `upRen` → `ren` (per component, `mut
 all `up` → `subst` (per component). Container heads are threaded structurally via a mutual helper
 (see the Containers section below); external heads are carried unchanged.
 -/
-import Lean
-import Autosubst.Gen.Backend
-import Autosubst.Gen.Inductive
-import Autosubst.Gen.Container
+
+module
+
+public import Lean
+public import Autosubst.Gen.Backend
+public import Autosubst.Gen.Inductive
+public import Autosubst.Gen.Container
+
+public meta section
 
 open Lean Elab Command
 

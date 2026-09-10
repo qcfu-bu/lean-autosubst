@@ -19,7 +19,12 @@ Everything lives in `Autosubst.Scoped`, parallel to the unscoped names in `Autos
 generator selects a backend by namespace prefix and the two can coexist. Laws are given in both
 pointwise and funext-based forms; the extensional forms feed the generated clean lemmas / `asimp`.
 -/
-import Autosubst.Prelude.Core
+
+module
+
+public import Autosubst.Prelude.Core
+
+@[expose] public section
 
 namespace Autosubst.Scoped
 

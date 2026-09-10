@@ -6,7 +6,12 @@ The scoped counterpart of [StlcDsl.lean](StlcDsl.lean): the same HOAS spec, but 
 (`tm : Nat → Type`, `var_tm : Fin n → tm n`, `lam : ty → tm (n+1) → tm n`) with `ren`/`subst`
 threading `Fin m → Fin n` / `Fin m → tm n` maps — matching [StlcScoped.lean](StlcScoped.lean).
 -/
-import Autosubst
+
+module
+
+public import Autosubst
+
+@[expose] public section
 
 open Autosubst Autosubst.Scoped Autosubst.Scoped.Notation
 
