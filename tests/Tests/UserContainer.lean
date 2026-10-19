@@ -75,3 +75,48 @@ theorem subst_fusion (σ τ : Nat → tm) (s : tm) :
 #axiom_clean subst_fusion
 
 end UserContainer.Nested
+
+/-! ## A rose tree: a user container whose recursion goes through *another* container.
+
+`Rose.node` holds a `List (Rose α)`, so the `Rose tm` helper hands its children to a helper for
+`List (Rose tm)` (`subst_tm_list_Rose`), which recurses back into `subst_tm_Rose` — all three mutual
+with `subst_tm`. `List` itself never appears in the signature. -/
+inductive Rose (α : Type) where
+  | leaf : α → Rose α
+  | node : List (Rose α) → Rose α
+
+namespace UserContainer.Rose
+open Autosubst
+
+autosubst
+  tm where
+    | app  : tm → tm → tm
+    | rose : (Rose tm) → tm
+    | lam  : (bind tm in tm) → tm
+
+example (σ : Nat → tm) (a b : tm) :
+    subst_tm σ (tm.rose (Rose.node [Rose.leaf a, Rose.leaf b]))
+      = tm.rose (Rose.node [Rose.leaf (subst_tm σ a), Rose.leaf (subst_tm σ b)]) := rfl
+example (σ : Nat → tm) (t : Rose tm) :
+    subst_tm σ (tm.rose t) = tm.rose (subst_tm_Rose σ t) := rfl
+example (σ : Nat → tm) (ts : List (Rose tm)) :
+    subst_tm_Rose σ (Rose.node ts) = Rose.node (subst_tm_list_Rose σ ts) := rfl
+
+theorem identity (s : tm) : subst_tm tm.var_tm s = s := by asimp
+theorem ren_fusion (ξ ζ : Nat → Nat) (s : tm) :
+    ren_tm ζ (ren_tm ξ s) = ren_tm (funcomp ζ ξ) s := by asimp
+theorem subst_fusion (σ τ : Nat → tm) (s : tm) :
+    subst_tm τ (subst_tm σ s) = subst_tm (funcomp (subst_tm τ) σ) s := by asimp
+theorem beta_cancel (t s : tm) : subst_tm (scons t tm.var_tm) (ren_tm shift s) = s := by asimp
+
+#axiom_clean subst_tm_Rose
+#axiom_clean subst_tm_list_Rose
+#axiom_clean idSubst_tm_Rose
+#axiom_clean compSubstSubst_tm_Rose
+#axiom_clean compSubstSubst_tm_list_Rose
+#axiom_clean substSubst_tm
+#axiom_clean identity
+#axiom_clean subst_fusion
+#axiom_clean beta_cancel
+
+end UserContainer.Rose

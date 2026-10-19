@@ -253,10 +253,11 @@ partial def genHeadProof (containers : Containers) (sc : Bool) (fam : Family) (s
 
 /-- The proof of one container-constructor argument of `ArgKind` `k` (the lemma-side analogue of
 `genHelperArg`): an element subproof via `genHeadProof` for the matching applied argument, a
-recursive subproof via the helper lemma (`tailProof x`), or `rfl` for an inert argument. -/
+recursive subproof via the helper lemma (`tailProof x`), `rfl` for an inert argument, or the
+instantiated head's subproof for a nested field (`self` is the container head being destructured). -/
 def genHelperProofArg (containers : Containers) (sc : Bool) (fam : Family) (sig : Signature)
-    (s : SortId) (vecS : List SortId) (args : List IR.ArgHead) (tailProof : Term) (k : ArgKind) (x : Ident) :
-    CommandElabM Term := do
+    (s : SortId) (vecS : List SortId) (self : IR.ArgHead) (args : List IR.ArgHead) (tailProof : Term)
+    (k : ArgKind) (x : Ident) : CommandElabM Term := do
   match k with
   | .elem i  =>
       match args[i]? with
@@ -264,6 +265,7 @@ def genHelperProofArg (containers : Containers) (sc : Bool) (fam : Family) (sig 
       | none => `(rfl)
   | .recurse => `($tailProof $x)
   | .inert   => `(rfl)
+  | .nested t => genHeadProof containers sc fam sig s vecS [] (t.instantiate self args) x
 
 /-- The container-helper lemma: maps the main recursive lemma over a container — `List`, `Option`,
 or any registered user inductive — structurally. The arms are derived from the
@@ -297,7 +299,7 @@ def genHelperLemma (containers : Containers) (sc : Bool) (fam : Family) (sig : S
             `(Lean.Parser.Term.matchAltExpr| | $(mkIdent cName) $xs* => rfl)
           else do
             let proofs ← (xs.zip kinds).mapM fun (x, k) =>
-              genHelperProofArg containers sc fam sig s vecS args tailProof k x
+              genHelperProofArg containers sc fam sig s vecS head args tailProof k x
             let term ← appAll (mkIdent (ctorCongrName cName)) proofs.toList
             -- `<;> exact` (not `; exact`): when every field proof is `rfl` — e.g. the container's
             -- elements are a *closed* sort with no substitution — `simp only` already closes the goal

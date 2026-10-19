@@ -310,24 +310,45 @@ partial def collectHelperHeads (containers : Containers) : IR.ArgHead → List I
     if (recContainerWord containers f).isSome && args.any headMentionsSort
     then (.functor f args) :: subs else subs
 
-/-- The `(sort, head)` pairs needing a helper in this component (deduped). -/
+/-- A nested-field template instantiated at the destructured container head `self = F args`:
+parameter `i` ↦ `args[i]`, the recursive occurrence ↦ `self` (`List (Rose α)` ↦ `List (Rose tm)`). -/
+partial def FieldTmpl.instantiate (self : IR.ArgHead) (args : List IR.ArgHead) : FieldTmpl → IR.ArgHead
+  | .param i => args[i]!
+  | .self => self
+  | .app g ts => .functor g (ts.map (FieldTmpl.instantiate self args))
+
+/-- The `(sort, head)` pairs needing a helper in this component (deduped) — including, transitively,
+the heads a container's nested fields instantiate to (`Rose tm` needs a helper for `List (Rose tm)`,
+whose elements lead back to `Rose tm`). -/
 def helperHeadsOf (containers : Containers) (sig : Signature) (comp : List SortId) :
     List (SortId × IR.ArgHead) := Id.run do
-  let mut acc : List (SortId × IR.ArgHead) := []
+  let mut todo : List (SortId × IR.ArgHead) := []
   for si in comp.filterMap (fun n => sig.sorts.find? (·.name == n)) do
     for c in si.ctors do
       for pos in c.positions do
-        for h in collectHelperHeads containers pos.head do
-          let pair := (si.name, h)
-          unless acc.contains pair do acc := acc ++ [pair]
+        todo := todo ++ (collectHelperHeads containers pos.head).map (si.name, ·)
+  let mut acc : List (SortId × IR.ArgHead) := []
+  repeat
+    match todo with
+    | [] => break
+    | pair :: rest =>
+      todo := rest
+      if acc.contains pair then continue
+      acc := acc ++ [pair]
+      if let (s, .functor f args) := pair then
+        for (_, kinds) in (shapeOf containers f).getD #[] do
+          for k in kinds do
+            if let .nested t := k then
+              todo := todo ++ (collectHelperHeads containers (t.instantiate pair.2 args)).map (s, ·)
   return acc
 
 /-- The transformed value of one helper-element argument of `ArgKind` `k`: an element parameter
 slot is substituted via `genHeadValue` on the matching applied argument head; a recursive occurrence
-recurses through the helper (`tailCall`); an inert argument is carried unchanged. -/
+recurses through the helper (`tailCall`); an inert argument is carried unchanged; a nested field is
+threaded as its instantiated head (`self` is the container head being destructured). -/
 def genHelperArg (containers : Containers) (sig : Signature) (forRen : Bool) (s : SortId)
-    (vecS : List SortId) (args : List IR.ArgHead) (tailCall : Term) (k : ArgKind) (x : Ident) :
-    CommandElabM Term := do
+    (vecS : List SortId) (self : IR.ArgHead) (args : List IR.ArgHead) (tailCall : Term) (k : ArgKind)
+    (x : Ident) : CommandElabM Term := do
   match k with
   | .elem i  =>
       match args[i]? with
@@ -335,6 +356,7 @@ def genHelperArg (containers : Containers) (sig : Signature) (forRen : Bool) (s 
       | none => pure x
   | .recurse => `($tailCall $x)
   | .inert   => pure x
+  | .nested t => genHeadValue containers sig forRen s vecS [] (t.instantiate self args) x
 
 /-- The mutual structural helper for a container head in sort `s` (threads `s`'s map vector; element
 transforms via `genHeadValue`, so nestings compose). The container — `List`, `Option`, or any
@@ -358,7 +380,8 @@ def genHelperDef (containers : Containers) (sc : Bool) (sig : Signature) (forRen
       let mut arms : Array (TSyntax ``Lean.Parser.Term.matchAlt) := #[]
       for (cName, kinds) in shape do
         let xs := (Array.range kinds.size).map (fun i => mkIdent (Name.mkSimple s!"x{i}"))
-        let rhs ← (xs.zip kinds).mapM fun (x, k) => genHelperArg containers sig forRen s vecS args tailCall k x
+        let rhs ← (xs.zip kinds).mapM fun (x, k) =>
+          genHelperArg containers sig forRen s vecS head args tailCall k x
         arms := arms.push (← `(Lean.Parser.Term.matchAltExpr| | $(mkIdent cName) $xs* => $(mkIdent cName) $rhs*))
       `(command| def $nmI $pbs* $params* : $ty → $ty $arms:matchAlt*)
   | _ => `(command| def $nmI $pbs* $params* : $ty → $ty := id)

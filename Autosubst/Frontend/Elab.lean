@@ -256,6 +256,9 @@ def elabAutosubst : CommandElab := fun stx => do
   let shapes : Autosubst.Gen.Containers ← heads.eraseDups.filterMapM fun f => do
     return (← liftTermElabM (Autosubst.Gen.containerShape? f)).map (f, ·)
   let names := shapes.map (·.1) ++ (if heads.contains `Prod then [`Prod] else [])
+  -- A container's fields may nest further containers (a rose tree's `List (Rose α)`); those get
+  -- helpers of their own, so the generator needs their shapes too.
+  let shapes ← liftTermElabM (Autosubst.Gen.withNestedContainers shapes)
   -- Validate that every recognised container head is fully applied to its type parameters. A
   -- partially- or over-applied head (`P2 tm`, `MyBox tm tm`, `Prod tm`) would otherwise die in raw
   -- elaboration errors at the command position with no hint about arity.
