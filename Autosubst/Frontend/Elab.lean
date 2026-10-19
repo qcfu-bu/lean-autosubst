@@ -7,14 +7,18 @@ The `autosubst` command elaborator. It walks the captured `Syntax` (never elabor
 this elaborator to also emit the de Bruijn inductives, substitution operations, lemma tower,
 and tactics.
 -/
-import Autosubst.Frontend.Syntax
-import Autosubst.IR.Signature
-import Autosubst.Gen.Inductive
-import Autosubst.Gen.Subst
-import Autosubst.Gen.Lemmas
-import Autosubst.Gen.Automation
-import Autosubst.Gen.Notation
-import Autosubst.Tactic.Asimp
+module
+
+public import Autosubst.Frontend.Syntax
+public import Autosubst.IR.Signature
+public import Autosubst.Gen.Inductive
+public import Autosubst.Gen.Subst
+public import Autosubst.Gen.Lemmas
+public import Autosubst.Gen.Automation
+public import Autosubst.Gen.Notation
+public import Autosubst.Tactic.Asimp
+
+public meta section
 
 open Lean Elab Command
 

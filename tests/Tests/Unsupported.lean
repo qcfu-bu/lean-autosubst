@@ -15,7 +15,11 @@ the behavior ever regresses to a silent (wrong) success.
      accepts these), not an Autosubst limitation; demonstrated at its root below. Unscoped
      containers work — see `Tests/Containers.lean`.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 /-! ## 1. Variadic binder `bind ⟨p, t⟩` — rejected in **unscoped** mode (works `wellscoped`). -/
 namespace XFail.VariadicBinder

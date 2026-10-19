@@ -11,7 +11,11 @@ breaks if any regresses. Two groups:
 * **Declines** — out-of-scope inputs that must fail with one *clean, deliberate* error (pinned with
   `#guard_msgs`), never a kernel error / `sorry` / cascade.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 namespace ContainerEdgeCases
 open Autosubst

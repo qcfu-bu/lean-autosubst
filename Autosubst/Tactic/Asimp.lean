@@ -29,10 +29,14 @@ it fails with "simp made no progress" — matching `simp only`. That is intentio
 reports when it had no effect. The `substify`/`renamify` wrappers, which must tolerate an
 already-normal goal, call it as `try asimp` (see below).
 -/
-import Lean
-import Autosubst.Prelude.Unscoped
-import Autosubst.Prelude.Scoped
-import Autosubst.Tactic.Attr
+module
+
+public meta import Lean
+public import Autosubst.Prelude.Unscoped
+public import Autosubst.Prelude.Scoped
+public import Autosubst.Tactic.Attr
+
+public meta section
 
 open Lean
 

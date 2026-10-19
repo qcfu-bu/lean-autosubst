@@ -22,7 +22,11 @@ core `Fin` with the Lean-idiomatic index order `Fin (n + p)`.
 Asserts: the tower typechecks, is axiom-clean (`{propext, Quot.sound}`), the generated ops are
 defeq to the golden, and representative `by asimp` goals close.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 namespace Variadic.Scoped
 open Autosubst Autosubst.Scoped

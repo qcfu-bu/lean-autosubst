@@ -13,7 +13,11 @@ Exercises two edge cases at once: `chan` is a **variable-only sort** (no user co
 `var_chan`; it is bound by `Res`/`In`), and `proc` is a sort that *substitutes* (`chan`-variables)
 yet is **not open** (no `var_proc`) and has a **nullary** constructor `Nil`. Both backends.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 /-! ## Unscoped -/
 namespace Pi.Unscoped

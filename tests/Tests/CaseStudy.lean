@@ -11,7 +11,11 @@ standard soundness pair.
 
 Contexts are `List ty`; a de Bruijn index `x` looks up `Γ[x]?`.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 namespace CaseStudy
 open Autosubst

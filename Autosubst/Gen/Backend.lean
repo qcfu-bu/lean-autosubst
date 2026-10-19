@@ -19,10 +19,14 @@ for component `v` going from stage `A` to `B` has type `Fin A_v → Fin B_v` (re
 `Fin A_v → v <B-scopes>` (substitution). Sharing the stage letter across composing maps is what
 makes their scopes line up (`xi : Fin m_v → Fin k_v`, `zeta : Fin k_v → Fin l_v`).
 -/
-import Lean
-import Autosubst.Prelude.Unscoped
-import Autosubst.Prelude.Scoped
-import Autosubst.IR.Signature
+module
+
+public meta import Lean
+public import Autosubst.Prelude.Unscoped
+public import Autosubst.Prelude.Scoped
+public import Autosubst.IR.Signature
+
+public meta section
 
 open Lean Elab Command
 

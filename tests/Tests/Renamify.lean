@@ -11,7 +11,11 @@ the `Renamify.Notation*` sections below (single-sort + multi-sort, both backends
 output is *syntactically* notation via `guard_hyp … :ₛ`. `auto_unfold` unfolds the lifting helpers
 (`up_<b>_<v>` / `upRen_<b>_<v>` / `up_ren`) — that is tested in the two sections immediately below.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 /-! ## `auto_unfold` (unscoped) -/
 namespace Renamify.Unscoped

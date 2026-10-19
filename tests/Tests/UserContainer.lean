@@ -13,7 +13,11 @@ not special — they are recognised by the same on-demand check (`Prod` threaded
 Asserts: the generated tower (through a user container) is axiom-clean and defeq to the structural
 golden ([Examples/Container.lean]); `by asimp` goals close.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 /-! ## A user container: a binary tree, used as a container with no markup at all. -/
 inductive Tree (α : Type) where

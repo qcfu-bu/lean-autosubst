@@ -10,6 +10,9 @@ composition `funcomp` (Autosubst's `f >> g`) and its identity/associativity laws
 constructors and emits a mutual helper + congruences directly; it needs no `list_map`/`option_map`/…
 functor laws. See `Gen/Container.lean` for the on-demand shape inference.)
 -/
+module
+
+@[expose] public section
 
 namespace Autosubst
 
@@ -28,7 +31,7 @@ scoped infixr:80 (priority := high) " >> " => fun f g => funcomp g f
 -- `f >> g = funcomp g f`. Active wherever `Autosubst` is open, so it also renders generic
 -- compositions as `>>`.
 open Lean PrettyPrinter in
-@[app_unexpander Autosubst.funcomp] def unexpFuncomp : Unexpander
+@[app_unexpander Autosubst.funcomp] meta def unexpFuncomp : Unexpander
   | `($_ $g $f) => `($f >> $g) | _ => throw ()
 
 theorem funcomp_assoc {W X Y Z : Sort _} (g : Y → Z) (f : X → Y) (h : W → X) :

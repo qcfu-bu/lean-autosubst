@@ -12,7 +12,11 @@ every map type is closed, so no ascription is ever needed. In the **well-scoped*
 *polymorphic* constant map (`↑`, `var_tm`, whose scope is a metavar at the use site) needs a one-off
 type ascription; concrete map variables never do — see the scoped section below.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 /-! ## Unscoped, single sort (STLC) -/
 namespace Notation.Stlc

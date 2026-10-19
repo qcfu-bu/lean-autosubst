@@ -12,7 +12,11 @@ single `mutual … end` block — the case that distinguishes a real mutual sign
 hierarchical one. `tm` is *not* open (no constructor binds `tm`); both `tm` and `vl` carry `ty`- and
 `vl`-variables, so each threads two maps. Both backends.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 /-! ## Unscoped -/
 namespace Fcbv.Unscoped

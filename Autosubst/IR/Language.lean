@@ -11,6 +11,9 @@ Designed for **multi-sorting** and **nested containers** from the start (Scope Â
   to sub-heads, so a sort nested inside a container is discoverable by the analyzer.
 - `Binder.vector` models the variadic `bind <p, s>` form.
 -/
+module
+
+public meta section
 
 open Lean
 

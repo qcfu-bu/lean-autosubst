@@ -49,9 +49,13 @@ The raw⟶method **canon** lemmas in [Gen/Notation.lean] follow `substCanon{k}_<
 `renCanon{k}_<s>` / `varIds_<s>` / `upLift_<s>`; their untagged reverse bridges are
 `substApp{k}_<s>` / `renApp{k}_<s>`.
 -/
-import Autosubst.Gen.Lemmas
-import Autosubst.Gen.Notation
-import Autosubst.Gen.Inductive
+module
+
+public import Autosubst.Gen.Lemmas
+public import Autosubst.Gen.Notation
+public import Autosubst.Gen.Inductive
+
+public meta section
 
 open Lean Elab Command
 

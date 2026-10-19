@@ -10,7 +10,11 @@ Runs **both** backends (`autosubst` and `autosubst wellscoped`) and asserts: the
 typechecks, is axiom-clean (`{propext, Quot.sound}`), and the four representative `by asimp` goals
 (identity, fusion, β-cancellation, substitution lemma) close.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 /-! ## Unscoped (`Nat`) -/
 namespace Stlc.Unscoped

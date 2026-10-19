@@ -23,7 +23,11 @@ The grammar lives in dedicated syntax categories so the `bind` keyword is scoped
 Functor application `(F a b …)` and the variadic binder `⟨p, s⟩` are modelled now (Scope §4a)
 though the analyzer/codegen exercise them later (Phase 9).
 -/
-import Lean
+module
+
+public meta import Lean
+
+public meta section
 
 open Lean
 

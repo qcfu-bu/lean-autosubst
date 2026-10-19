@@ -14,8 +14,12 @@ The reference-signature tests (`Tests/*.lean`) each port a `rocq/.../signatures/
 `#axiom_clean foo` errors (failing the build) if `foo` transitively uses any axiom outside the
 clean set — the same check `#print axioms foo` reports, but as a hard assertion.
 -/
-import Lean
-import Autosubst
+module
+
+public meta import Lean
+public import Autosubst
+
+public meta section
 
 open Lean Elab Command
 

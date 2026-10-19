@@ -5,7 +5,11 @@ Unlike `Examples/Stlc.lean` (which hand-writes the de Bruijn syntax and its whol
 as the generator's *golden target*), this file uses the actual `autosubst` command to *generate*
 everything from a native-Lean HOAS spec, then proves substitution metatheory with `by asimp`.
 -/
-import Autosubst
+module
+
+public import Autosubst
+
+@[expose] public section
 
 open Autosubst Autosubst.Notation
 

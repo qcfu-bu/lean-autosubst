@@ -25,7 +25,12 @@ This doubles as the `sysf.sig` reference test, superseding the old `Tests/SysF.l
 backend is exercised throughout the SN development below, and the well-scoped backend is checked at
 the end. Both are `#axiom_clean`.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
+
 open Autosubst Autosubst.Notation
 
 namespace SysfSN

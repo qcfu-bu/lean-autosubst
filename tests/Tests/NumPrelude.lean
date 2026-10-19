@@ -8,7 +8,11 @@ just a capitalized Lean type referenced directly (`Nat`, `Bool`): the parser rec
 gets no `congr` lemma; this also makes the *scoped* backend work (its result scope is left free,
 not forced). Both backends.
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 /-! ## `num.sig` — unscoped -/
 namespace Num.Unscoped

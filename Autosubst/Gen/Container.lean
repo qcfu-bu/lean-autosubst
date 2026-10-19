@@ -16,7 +16,11 @@ contravariant, dependent, or a non-uniform recursive occurrence) ⟹ not a regul
 The binary `Prod` is handled inline by the generator; function-space and nested-`F (G α)` types
 decline.
 -/
-import Lean
+module
+
+public meta import Lean
+
+public meta section
 
 open Lean Meta
 

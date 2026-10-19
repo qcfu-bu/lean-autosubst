@@ -10,7 +10,11 @@ cannot contain local variables"), a Lean-vs-Coq kernel difference — see `Tests
 which exhibits that kernel error explicitly. (The variadic *binder* `bind ⟨p, t⟩` of `variadic.sig`
 is unported in both backends — also in `Tests/Unsupported.lean`.)
 -/
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 /-! ## `logrel_coq.sig` — `Option` functor + a binder into `Option` (`tPair`), `Nat`-as-foreign. -/
 namespace Logrel

@@ -1,4 +1,8 @@
-import Tests.Support
+module
+
+public import Tests.Support
+
+@[expose] public section
 
 universe u v w
 
